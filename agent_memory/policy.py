@@ -4,12 +4,15 @@ import math
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
+from agent_memory.logging_config import get_logger
 from agent_memory.models import (
     VERIFY_TYPES,
     MemoryAction,
     MemoryEntry,
     RetrievalResult,
 )
+
+log = get_logger(__name__)
 
 
 class DecisionPolicy(ABC):
@@ -53,10 +56,30 @@ class DefaultPolicy(DecisionPolicy):
         self.recency_half_life_days = recency_half_life_days
         self.usage_cap = usage_cap
 
-    def score(self, entry: MemoryEntry, semantic: float, keyword: float) -> float:
-        return self.score_breakdown(entry, semantic, keyword)["policy_score"]
+    def score(
+        self,
+        entry: MemoryEntry,
+        semantic: float,
+        keyword: float,
+        *,
+        now: datetime | None = None,
+    ) -> float:
+        return self.score_breakdown(entry, semantic, keyword, now=now)["policy_score"]
 
-    def score_breakdown(self, entry: MemoryEntry, semantic: float, keyword: float) -> dict[str, float]:
+    def score_breakdown(
+        self,
+        entry: MemoryEntry,
+        semantic: float,
+        keyword: float,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, float]:
+        """Compute per-component scores.
+
+        *now* is shared across all entries in a single retrieve() call so
+        recency is consistent and we avoid N ``datetime.now()`` syscalls — a
+        simple but correct form of memoisation.
+        """
         # Let the stronger retrieval channel dominate: embeddings score
         # paraphrases conservatively, keyword coverage scores them lexically —
         # solid evidence from either channel should carry the match.
@@ -64,7 +87,7 @@ class DefaultPolicy(DecisionPolicy):
             0.7 * semantic + 0.3 * keyword,
             0.7 * keyword + 0.3 * semantic,
         )
-        recency = self._recency_score(entry.updated_at)
+        recency = self._recency_score(entry.updated_at, now=now)
         usage = min(entry.access_count, self.usage_cap) / self.usage_cap
         confidence = entry.confidence
         policy_score = (
@@ -140,6 +163,12 @@ class DefaultPolicy(DecisionPolicy):
             return True
         return False
 
-    def _recency_score(self, updated_at: datetime) -> float:
-        age_days = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds() / 86400)
+    def _recency_score(
+        self, updated_at: datetime, *, now: datetime | None = None
+    ) -> float:
+        _now = now or datetime.now(timezone.utc)
+        ts = updated_at
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_days = max(0.0, (_now - ts).total_seconds() / 86400)
         return math.exp(-0.693 * age_days / self.recency_half_life_days)

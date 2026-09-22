@@ -19,31 +19,54 @@ def _create_memory(args: argparse.Namespace) -> Memory:
 
 def cmd_remember(args: argparse.Namespace) -> int:
     memory = _create_memory(args)
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()] if args.tags else []
     entry = memory.remember(
         args.query,
         args.response,
         type=args.type,
         scope=args.scope,
         ttl=args.ttl,
+        tags=tags,
+        confidence=args.confidence,
+        requires_verification=args.requires_verification,
     )
-    print(f"Stored memory {entry.id}")
+    print(f"✓ Stored  id={entry.id[:16]}…  [{entry.type.value}]  scope={entry.scope.value}")
+    if entry.tags:
+        print(f"  tags: {', '.join(entry.tags)}")
     return 0
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
     memory = _create_memory(args)
     decision = memory.resolve(args.query)
-    print(f"action:     {decision.action.value}")
+
+    ACTION_LABEL = {
+        "replay":  "✅ REPLAY",
+        "restore": "📋 RESTORE",
+        "verify":  "⚠️  VERIFY",
+        "none":    "❌ NONE",
+    }
+    print(f"action:     {ACTION_LABEL.get(decision.action.value, decision.action.value)}")
     print(f"confidence: {decision.confidence:.2f}")
-    entry = decision.memory or (decision.context[0].entry if decision.context else None)
-    if decision.action.value == "replay" and entry:
-        print(f'remembered: "{entry.query}" (stored {entry.created_at:%Y-%m-%d}, reused {entry.access_count}x)')
+
+    if decision.reasons:
+        print(f"reasons:    {' · '.join(decision.reasons)}")
+
+    if decision.action.value == "replay" and decision.memory:
+        e = decision.memory
+        print(f'matched:    "{e.query}"')
+        print(f'stored:     {e.created_at:%Y-%m-%d}  reused {e.access_count}×  confidence {e.confidence:.0%}')
         print(f"response:   {decision.response}")
-    elif decision.action.value in ("restore", "verify") and entry:
-        print(f'remembered: "{entry.query}"')
-        print(f"reason:     {decision.reason}")
-    else:
-        print(f"reason:     {decision.reason}")
+
+    elif decision.action.value in ("restore", "verify") and decision.context:
+        print(f"matches:    {len(decision.context)} context entr{'y' if len(decision.context) == 1 else 'ies'}")
+        for i, ctx in enumerate(decision.context, 1):
+            e = ctx.entry
+            print(f"  [{i}] score={ctx.final_score:.2f}  [{e.type.value}]  {e.query[:70]}")
+            print(f"       → {e.response[:100]}")
+        if decision.action.value == "verify":
+            print("  ⚠  This memory requires verification before reuse.")
+
     if args.explain:
         print()
         print(decision.explain())
@@ -55,8 +78,14 @@ def cmd_stats(args: argparse.Namespace) -> int:
     stats = memory.stats()
     print("Agent Memory Stats")
     print("==================")
-    for key, value in stats.items():
-        print(f"{key}: {value}")
+    print(f"total:        {stats.get('total', 0)}")
+    print(f"access count: {stats.get('total_access_count', 0)}")
+    by_state = stats.get("by_state", {})
+    if by_state:
+        print("by state:     " + "  ".join(f"{k}={v}" for k, v in sorted(by_state.items())))
+    by_type = stats.get("by_type", {})
+    if by_type:
+        print("by type:      " + "  ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
     return 0
 
 
@@ -123,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     def add_common_args(subparser: argparse.ArgumentParser) -> None:
         subparser.add_argument(
             "--backend",
-            choices=["sqlite", "chromadb"],
+            choices=["sqlite", "chromadb", "redis", "postgres"],
             default="sqlite",
             help="Storage backend (default: sqlite)",
         )
@@ -131,9 +160,18 @@ def build_parser() -> argparse.ArgumentParser:
     remember = sub.add_parser("remember", help="Store a memory")
     remember.add_argument("query")
     remember.add_argument("response")
-    remember.add_argument("--type", default="conversation")
-    remember.add_argument("--scope", default="user")
-    remember.add_argument("--ttl", default=None)
+    remember.add_argument("--type",  default="conversation",
+                          help="Memory type: conversation|fact|workflow|tool_output|code|preference|document|summary")
+    remember.add_argument("--scope", default="user",
+                          help="Memory scope: user|project|team|global|session|workspace")
+    remember.add_argument("--ttl",   default=None,
+                          help="Expiry: 30d, 2h, 3600 (seconds)")
+    remember.add_argument("--tags",  default="",
+                          help="Comma-separated tags, e.g. auth,faq")
+    remember.add_argument("--confidence", type=float, default=1.0,
+                          help="Confidence score 0.0–1.0 (default 1.0)")
+    remember.add_argument("--requires-verification", action="store_true",
+                          help="Always return VERIFY instead of REPLAY for this memory")
     add_common_args(remember)
     remember.set_defaults(func=cmd_remember)
 

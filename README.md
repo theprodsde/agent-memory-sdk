@@ -13,492 +13,200 @@
 
 ---
 
-## 🎯 The Problem
+## The problem
 
-Most AI memory systems simply retrieve and inject past context into every prompt. This leads to:
-- **💰 Higher token costs** - Unnecessary context in every query
-- **🎭 Inconsistent responses** - No validation of stale or incorrect memories
-- **⏱️ Poor performance** - Always processing memory, even when irrelevant
-- **🤖 No intelligence** - Memory is treated as a dumb cache
+Most AI memory systems retrieve and inject past context into every prompt.
+This leads to wasted tokens, inconsistent responses, and agents that blindly
+replay stale or wrong answers.
 
-## ✨ The Solution
-
-Agent Memory is a **decision layer** that intelligently chooses when and how to use memory:
+Agent Memory adds a **decision layer**:
 
 ```mermaid
 flowchart TD
     A[User Query] --> B[Resolve Memory]
     B --> C[Decision Engine]
-    C -->|High confidence match| D[🔄 Replay: Return stored answer]
-    C -->|Moderate match| E[📋 Restore: Inject as context]
-    C -->|Needs validation| F[✅ Verify: Validate before reuse]
-    C -->|No match| G[❌ None: Answer from scratch]
-    
-    style D fill:#0d47a1,color:#ffffff
-    style E fill:#e65100,color:#ffffff
-    style F fill:#1b5e20,color:#ffffff
-    style G fill:#b71c1c,color:#ffffff
+    C -->|High confidence match| D[🔄 Replay — return stored answer]
+    C -->|Moderate match| E[📋 Restore — inject as context]
+    C -->|Needs validation| F[✅ Verify — validate before reuse]
+    C -->|No match| G[❌ None — answer from scratch]
+
+    style D fill:#0d47a1,color:#fff
+    style E fill:#e65100,color:#fff
+    style F fill:#1b5e20,color:#fff
+    style G fill:#b71c1c,color:#fff
 ```
 
-**Benefits:**
-- ✅ **Response consistency** - Reuse proven answers
-- ✅ **Lower token usage** - Only inject when beneficial
-- ✅ **Faster responses** - Instant replay for repeated queries
-- ✅ **Better long-term behavior** - Agents learn when to trust memory
-
-### How it compares
-
-mem0, Zep, Letta, and LangMem answer *"what did we store about this?"*.
-Agent Memory also answers **"should I use it, and how much should I trust it?"**
-— every `resolve()` returns an explicit action (replay / restore / verify /
-none) with a scored, explainable rationale (`decision.explain()`).
-
-The difference shows up on **trap queries**. Given a stored memory
-*"What payment methods do you support?"*, a naive top-1 retriever answers
-*"Does the platform **support** two-factor authentication?"* with the payment
-answer. Agent Memory returns `none`:
-
-```text
-action: none
-confidence: 0.68
-reasons:
-  - keyword match
-  - below restore threshold
-```
-
-Our eval suite includes these adversarial cases and scores **25/25 (100%)**
-on both backends — see [measured results](docs/benchmarks.md) with the exact
-methodology and reproduce commands. No synthetic baselines.
+Every `resolve()` returns an **explicit action** with a scored, explainable rationale —
+not just a retrieved chunk.
+Adversarial eval: **25/25 (100%)** on trap queries — see [benchmarks](docs/benchmarks.md).
 
 ---
 
-## 🏗️ Architecture
+## Features at a glance
 
-```mermaid
-flowchart LR
-    subgraph Input["Input Layer"]
-        Q[User Query]
-    end
-    
-    subgraph Retrieval["Retrieval Layer"]
-        BM25[BM25 Keyword Search]
-        Vector[Vector Semantic Search]
-        Fusion[Reciprocal Rank Fusion]
-    end
-    
-    subgraph Decision["Decision Layer"]
-        Policy[Scoring Policy]
-        Engine[Decision Engine]
-    end
-    
-    subgraph Storage["Storage Layer"]
-        Chroma[ChromaDB]
-        DB[(Local Persistence)]
-    end
-    
-    subgraph Output["Output Layer"]
-        Replay[Replay Action]
-        Restore[Restore Action]
-        Verify[Verify Action]
-        None[None Action]
-    end
-    
-    Q --> BM25
-    Q --> Vector
-    BM25 --> Fusion
-    Vector --> Fusion
-    Fusion --> Policy
-    Policy --> Engine
-    Engine --> Storage
-    Storage --> Engine
-    Engine --> Replay
-    Engine --> Restore
-    Engine --> Verify
-    Engine --> None
-    
-    style Input fill:#4a148c,color:#ffffff
-    style Retrieval fill:#0d47a1,color:#ffffff
-    style Decision fill:#e65100,color:#ffffff
-    style Storage fill:#1b5e20,color:#ffffff
-    style Output fill:#b71c1c,color:#ffffff
-```
+| Feature | What it does |
+|---------|-------------|
+| **Decision engine** | Every `resolve()` returns REPLAY / RESTORE / VERIFY / NONE — never silent injection |
+| **Explainability** | `decision.explain()` shows per-component scores: semantic, recency, confidence, usage |
+| **Hybrid retrieval** | BM25 FTS5 + optional vector KNN + RRF fusion — fast and accurate |
+| **4 backends** | SQLite (default, zero-setup) · ChromaDB · Redis · PostgreSQL |
+| **Framework adapters** | Drop-in `BaseMemory` for LangChain and LlamaIndex |
+| **MCP server** | Works with Cursor, Claude Code, VS Code via Model Context Protocol |
+| **REST API** | FastAPI server with 9 endpoints + Swagger UI |
+| **Dashboard** | Streamlit UI — stats, memory browser, live resolve sandbox |
+| **Multi-agent** | SHARED / NAMESPACED / ISOLATED memory across multiple agents |
+| **Confidence learning** | Event-driven confidence updates + half-life temporal decay |
+| **Memory graph** | Relationship edges, path-finding, clusters, PageRank importance |
+| **Async API** | `aremember`, `aresolve`, `alist`, … — all operations have async counterparts |
+| **TTL & states** | Automatic expiry, archiving, near-duplicate consolidation |
 
-### How It Works
-
-1. **Query Input**: User query enters the system
-2. **Hybrid Retrieval**: BM25 (keyword) + Vector (semantic) search with RRF fusion
-3. **Policy Scoring**: Multi-factor scoring (semantic + recency + confidence + usage)
-4. **Decision Engine**: Intelligently selects the best action
-5. **Action Execution**: Returns appropriate response based on decision
+→ Full feature reference: **[docs/features.md](docs/features.md)**
 
 ---
 
-## 📦 Features
+## When to use it
 
-### 🎯 Decision-Based Memory
+**Use Agent Memory when:**
+- You want an agent to remember past interactions without injecting all of them into every prompt
+- You need explicit control over *when* memory is used (replay exact answers vs inject as context vs verify first)
+- You have different memory trust levels (user preferences vs potentially-stale facts vs tool outputs)
+- Multiple processes, services, or agents share the same memory store
+- You need audit trails — every replay is traceable to a specific stored entry with a score breakdown
 
-Memory is **not automatically injected**. Each query results in one of four actions:
+**Don't use it for:**
+- Document RAG (search over a corpus of files) — use a vector database for that; Agent Memory stores query→answer *experiences*
+- A replacement for your database — it stores transient agent knowledge, not your application's source-of-truth data
 
-| Action | Behavior | Use Case |
-|--------|----------|----------|
-| **Replay** | Return previous answer | Exact or near-identical queries |
-| **Restore** | Inject memory as context | Similar queries needing adaptation |
-| **Verify** | Validate before reuse | Facts, workflows, tool outputs |
-| **None** | Ignore memory | Unrelated queries |
+---
 
-### 🔍 Hybrid Retrieval Pipeline
-
-```mermaid
-flowchart TD
-    A[Query] --> B[BM25 Search]
-    A --> C[Vector Search]
-    B --> D[Reciprocal Rank Fusion]
-    C --> D
-    D --> E[Policy Reranking]
-    E --> F[Top K Results]
-    
-    style B fill:#f57f17,color:#ffffff
-    style C fill:#2e7d32,color:#ffffff
-    style D fill:#1565c0,color:#ffffff
-    style E fill:#6a1b9a,color:#ffffff
-```
-
-**Policy scoring considers:**
-- 📊 Semantic + keyword similarity (55% weight)
-- 📅 Recency (15% weight)
-- ✅ Confidence score (20% weight)
-- 🔄 Usage frequency (10% weight)
-
-### 🗄️ Storage Backends
-
-| Backend | Install extra | Retrieval | Best for |
-|---------|--------------|-----------|----------|
-| `sqlite` *(default)* | *(none)* | FTS5 BM25 + coverage | Zero-setup, fast, exact/near-exact queries |
-| `sqlite` + vectors | `[semantic]` | sqlite-vec KNN + FTS5 hybrid | Paraphrase robustness, no server |
-| `chromadb` | *(bundled)* | Vector embeddings + BM25 | Existing ChromaDB deployments |
-| `redis` | `[redis]` | BM25 (Python-side) | Sub-millisecond reads, shared-state workloads |
-| `postgres` | `[postgres]` | tsvector FTS + optional pgvector KNN | Production SQL deployments |
-
-```python
-# SQLite (default)
-memory = Memory(persist_dir=".agent_memory")
-
-# Redis
-memory = Memory(backend="redis", url="redis://localhost:6379/0")
-
-# Postgres
-memory = Memory(backend="postgres", dsn="postgresql://user:pw@localhost/mydb")
-```
-
-Start Redis or Postgres locally with the included Compose file:
+## Quick Start
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d   # starts redis + postgres
-```
-
-> **Honesty note:** Without the `[semantic]` extra, sqlite's "semantic" search is lexical.
-> Exact and near-exact queries work great; paraphrases with zero shared words need
-> `[semantic]` or `chromadb`.
-
-### 🗃️ Structured Memory
-
-Store memories with **type** and **scope** for better organization:
-
-**Memory Types:**
-- `conversation` - Chat history
-- `fact` - Verifiable information
-- `workflow` - Step-by-step processes
-- `document` - Long-form content
-- `tool_output` - API/tool responses
-- `code` - Code snippets
-- `summary` - Consolidated memories
-- `preference` - User preferences
-
-**Scopes:**
-- `session` - Current conversation
-- `user` - User-specific
-- `project` - Project-specific
-- `workspace` - Workspace-wide
-- `team` - Team-shared
-- `global` - Application-wide
-
-### ⏰ Time-to-Live (TTL)
-
-Automatic expiration with flexible TTL:
-```python
-# Absolute time
-memory.remember(query, response, ttl="30d")  # 30 days
-memory.remember(query, response, ttl="2h")   # 2 hours
-
-# Relative time
-memory.remember(query, response, ttl=3600)   # 1 hour in seconds
-```
-
-### 📊 Observability
-
-Full transparency into decision-making:
-```python
-decision = memory.resolve(query)
-print(decision)  # Decision object
-print(decision.explain())  # Detailed score breakdown
-```
-
----
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-# Core (SQLite backend, MCP server, CLI)
 pip install agent-memory-sdk
-
-# With optional extras
-pip install "agent-memory-sdk[semantic]"    # vector search: sqlite-vec + fastembed
-pip install "agent-memory-sdk[redis]"       # Redis backend
-pip install "agent-memory-sdk[postgres]"    # PostgreSQL backend
-pip install "agent-memory-sdk[api]"         # FastAPI REST server
-pip install "agent-memory-sdk[dashboard]"   # Streamlit dashboard
-pip install "agent-memory-sdk[langchain]"   # LangChain BaseMemory adapter
-pip install "agent-memory-sdk[llamaindex]"  # LlamaIndex BaseMemory adapter
-
-# From source (development)
-git clone https://github.com/TheProdSDE/agent-memory-sdk.git
-cd agent-memory-sdk
-pip install -e ".[dev]"
 ```
-
-### Basic Usage
-
-```python
-from agent_memory import Memory, MemoryAction, MemoryType
-
-# Initialize memory
-memory = Memory(persist_dir=".agent_memory")
-
-# Store a memory
-memory.remember(
-    query="How do I reset my password?",
-    response="Go to Settings → Security → Reset Password and follow the email link.",
-    type=MemoryType.CONVERSATION,
-    tags=["auth", "faq"],
-    confidence=0.95
-)
-
-# Store a fact that requires verification
-memory.remember(
-    query="Current API rate limit",
-    response="1000 requests/minute per API key.",
-    type=MemoryType.FACT,
-    requires_verification=True
-)
-
-# Resolve a query
-decision = memory.resolve("How do I reset my password?")
-
-# Handle the decision
-match decision.action:
-    case MemoryAction.REPLAY:
-        print(f"Replaying: {decision.response}")
-    case MemoryAction.RESTORE:
-        context = memory.format_restore_context(decision)
-        print(f"Context: {context}")
-        # Use with your LLM: llm(query, context=context)
-    case MemoryAction.VERIFY:
-        print(f"Verify: {decision.memory.response}")
-        # Validate with tools before reuse
-    case MemoryAction.NONE:
-        print("No relevant memory - answer from scratch")
-```
-
----
-
-## 🖥️ Dashboard
-
-An interactive Streamlit dashboard for exploring memories, testing the resolve sandbox, and monitoring stats — no coding required.
-
-![Agent Memory dashboard slideshow: stats, memory table, replay/verify/none resolve results](docs/assets/dashboard_demo.gif)
-
-### Screenshots
-
-| Stats — KPIs + charts | Memories — searchable table |
-|---|---|
-| ![Stats tab showing 31 total memories, donut chart by state, bar chart by type](docs/assets/01_stats.png) | ![Memories tab showing 29 rows with type, scope, confidence, access count](docs/assets/02_memories.png) |
-
-| Resolve → **REPLAY** | Resolve → **VERIFY** |
-|---|---|
-| ![Resolve tab showing REPLAY badge with green colour, confidence 0.88, full response shown](docs/assets/03_resolve_replay.png) | ![Resolve tab showing VERIFY badge with amber colour, context entry with fact response](docs/assets/04_resolve_verify.png) |
-
-### Install & Launch
-
-```bash
-# Install the dashboard extra
-pip install "agent-memory-sdk[dashboard]"
-
-# Launch against your existing memory store
-AGENT_MEMORY_DIR=.agent_memory agent-memory-dashboard
-# → opens http://localhost:8501
-```
-
-### Seed demo data (optional)
-
-Run this once when you want a populated store to explore — **only run it when you choose to**:
-
-```bash
-python scripts/seed_demo.py --data-dir .agent_memory
-# Seeds 31 memories across all 8 types (fact, workflow, code, preference, …)
-# and all 6 scopes (user, project, team, global, …)
-```
-
-> The data directory and collection can be changed live in the **sidebar** without restarting.
-> Click **Apply** to reconnect, **Refresh** to reload live data.
-
-### What each tab shows
-
-| Tab | Contents |
-|-----|----------|
-| **📊 Stats** | KPI tiles (total · active · archived · expired · accesses) + donut chart by state + bar chart by type |
-| **📋 Memories** | Searchable table — filter by keyword, scope, or type. Inspect any row for full detail. Add new memories inline. |
-| **🔍 Resolve** | Live decision sandbox — type any query and see the action (REPLAY / RESTORE / VERIFY / NONE), confidence score, reasons, and the exact response or context returned. |
-
----
-
-## 🔁 Wiring It Into Your Agent
-
-**Nothing is saved automatically.** Your application decides what's worth
-remembering — that's deliberate, because auto-saving every turn fills the
-store with junk. Integration is two calls at two points in your agent loop:
-`resolve()` *before* the LLM call, `remember()` *after* an answer worth keeping.
 
 ```python
 from agent_memory import Memory, MemoryAction
 
-memory = Memory(persist_dir="~/.myapp_memory")
+memory = Memory(persist_dir=".agent_memory")
 
-def handle(user_query: str) -> str:
-    decision = memory.resolve(user_query)          # ① BEFORE the LLM call
+# Store once after a good answer
+memory.remember(
+    "How do I reset my password?",
+    "Go to Settings → Security → Reset Password.",
+    type="conversation", tags=["auth"],
+)
 
-    if decision.action == MemoryAction.REPLAY:
-        return decision.response                   # no LLM call at all
-
-    if decision.action == MemoryAction.RESTORE:
-        context = memory.format_restore_context(decision)
-        answer = call_llm(user_query, system_extra=context)
-    elif decision.action == MemoryAction.VERIFY:
-        answer = revalidate_or_regenerate(decision.memory, user_query)
-    else:  # NONE — memory stayed out of the way
-        answer = call_llm(user_query)
-
-    memory.remember(user_query, answer)            # ② AFTER a good answer
-    return answer
-```
-
-### Every decision says what it remembered
-
-A REPLAY is never a black box — the decision carries the full stored entry,
-so you always know *which* memory answered and can show or log it:
-
-```python
+# Decide before every LLM call
 decision = memory.resolve("How do I reset my password?")
-decision.response        # the stored answer being replayed
-decision.memory.query    # the original question it matched
-decision.memory.created_at, decision.memory.access_count, decision.memory.confidence
-print(decision.explain())  # full score breakdown: why this memory, why this action
+
+if decision.action == MemoryAction.REPLAY:
+    return decision.response          # exact match — no LLM call needed
+
+if decision.action == MemoryAction.RESTORE:
+    context = memory.format_restore_context(decision)
+    return call_llm(query, system_extra=context)
+
+# VERIFY or NONE — validate or answer fresh
 ```
 
-(The MCP `resolve_memory` tool does the same: replay replies include
-`matched_query`, `stored_at`, and `times_reused` alongside the response.)
+→ Full integration pattern and API reference: **[docs/usage.md](docs/usage.md)**
 
-### What to remember, and how
+---
 
-| What you're saving | How to save it |
+## Local Setup
+
+### Option 1 — SQLite (zero dependencies, recommended to start)
+
+```bash
+pip install agent-memory-sdk
+
+# Store something
+agent-memory remember "How do I reset my password?" \
+  "Go to Settings → Security → Reset Password." \
+  --type conversation --tags auth,faq
+
+# Ask it back
+agent-memory resolve "I forgot my password"
+# ✅ REPLAY  confidence: 0.87
+# matched: "How do I reset my password?"  stored: 2026-01-01  reused 1×
+# response: Go to Settings → Security → Reset Password.
+
+# See what's stored
+agent-memory stats
+```
+
+### Option 2 — Redis or Postgres backend
+
+```bash
+# Spin up the services
+docker compose -f docker-compose.dev.yml up -d
+
+# Install the backend extra
+pip install "agent-memory-sdk[redis]"      # or [postgres]
+
+# Use it
+agent-memory --backend redis remember "API limit" "1000 req/min" --type fact
+agent-memory --backend redis resolve "What is the rate limit?"
+```
+
+### Option 3 — Streamlit dashboard (visual exploration)
+
+```bash
+pip install "agent-memory-sdk[dashboard]"
+
+# Seed demo data (optional)
+python scripts/seed_demo.py --data-dir .agent_memory
+
+# Open the dashboard
+AGENT_MEMORY_DIR=.agent_memory agent-memory-dashboard
+# → http://localhost:8501
+```
+
+### Option 4 — Development / from source
+
+```bash
+git clone https://github.com/TheProdSDE/agent-memory-sdk.git
+cd agent-memory-sdk
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+make test          # run all tests
+make check         # lint + type check
+```
+
+---
+
+## Dashboard
+
+An interactive Streamlit dashboard for exploring memories, testing the resolve sandbox, and monitoring stats.
+
+![Agent Memory dashboard slideshow: stats, memory table, replay/verify/none resolve results](docs/assets/dashboard_demo.gif)
+
+| Stats — KPIs + charts | Memories — searchable table |
 |---|---|
-| A validated answer the user accepted | `remember(q, a, confidence=0.95)` |
-| An expensive tool/API result | `type="tool_output", ttl="1h"` — replays within the hour, expires after |
-| A fact that can go stale (rate limits, prices) | `type="fact", requires_verification=True` — always comes back as VERIFY, never silent replay |
-| A user preference | `type="preference", scope="user"` |
-| Project conventions ("how do we run tests") | `type="workflow", scope="project"` |
-| A low-certainty guess | `confidence=0.4` — may restore as context, never replays verbatim |
+| ![Stats tab: 31 total, donut chart by state, bar chart by type](docs/assets/01_stats.png) | ![Memories tab: 29 rows with type, scope, confidence, access count](docs/assets/02_memories.png) |
 
-### Sharing one memory across processes
+| Resolve → REPLAY | Resolve → VERIFY |
+|---|---|
+| ![REPLAY badge, confidence 0.88, full response shown](docs/assets/03_resolve_replay.png) | ![VERIFY badge, context entry with fact response](docs/assets/04_resolve_verify.png) |
 
-The store is a SQLite file under `persist_dir`. Every process pointing at
-the same directory shares the same memories — WAL mode makes concurrent
-access safe. So these all interoperate on one store:
+```bash
+pip install "agent-memory-sdk[dashboard]"
+AGENT_MEMORY_DIR=.agent_memory agent-memory-dashboard   # → http://localhost:8501
 
-- **Your Python app** — the loop above, in-process.
-- **The MCP server** — for agents whose loop you don't own (Cursor, Claude
-  Code): the host LLM calls `remember_memory` / `resolve_memory` as tools.
-  Point `AGENT_MEMORY_DIR` at the same directory and something Cursor
-  learned this morning is replayable from your Python service this afternoon.
-- **The CLI** — cron jobs seeding memories from docs or tickets, and nightly
-  `agent-memory cleanup --delete`.
-
-### Where this earns its keep
-
-- **Support bot** — repeated questions REPLAY (zero LLM cost, identical
-  answers), paraphrases RESTORE the canonical answer, and policy facts
-  stored with `requires_verification=True` get re-checked before reuse.
-- **Coding agent** — project-scoped workflows stop the agent re-deriving
-  your conventions each session, but age into VERIFY when they go stale.
-- **Tool-output caching with judgment** — API results replay within their
-  TTL, and unrelated questions never get polluted by them (that's the
-  trap-query protection).
-
-Not for document RAG: this stores query→answer *experiences* and decides
-whether to trust them. It complements a document store, not replaces one.
-
----
-
-## 🛠️ API Reference
-
-### Core Methods
-
-```python
-# Memory management
-memory.remember(query, response, *, type, scope, tags, confidence, ttl, metadata)
-memory.get(memory_id)
-memory.list(limit=100, offset=0, *, scope, include_archived, type)
-memory.forget(memory_id)
-memory.archive(memory_id)
-
-# Query and resolve
-decision = memory.resolve(query, *, mode, top_k, scope, enable_verify)
-
-# Maintenance
-memory.cleanup(delete=False)  # Mark expired as expired
-memory.cleanup(delete=True)   # Delete expired
-memory.consolidate(similarity_threshold=0.95)  # Merge duplicates
-memory.stats()  # Get usage statistics
-```
-
-### Decision Object
-
-```python
-class MemoryDecision:
-    action: MemoryAction  # REPLAY, RESTORE, VERIFY, NONE
-    confidence: float     # 0.0 - 1.0
-    query: str            # Original query
-    reason: str           # Human-readable reason
-    reasons: list[str]    # Detailed reasons
-    response: str | None  # For REPLAY action
-    memory: MemoryEntry | None  # For REPLAY/VERIFY
-    context: list[RetrievalResult]  # For RESTORE/VERIFY
-    
-    def explain(self) -> str:  # Detailed score breakdown
-        return "..."
+# Seed demo data (optional — run only when you want it)
+python scripts/seed_demo.py --data-dir .agent_memory
 ```
 
 ---
 
-## 🔗 Integrations
+## Integrations
 
 `agent-memory-sdk` is the core — every integration delegates to `Memory`.
-All examples live in [`examples/`](examples/) with full setup instructions.
 
-| Integration | Install | Example |
-|-------------|---------|---------|
-| **Core SDK** (SQLite) | `pip install agent-memory-sdk` | [basic_usage.py](examples/basic_usage.py) |
+| Integration | Install extra | Example |
+|-------------|--------------|---------|
+| **Core SDK** (SQLite) | *(none)* | [basic_usage.py](examples/basic_usage.py) |
 | **LangChain** `BaseMemory` | `[langchain]` | [langchain_integration.py](examples/langchain_integration.py) |
 | **LlamaIndex** `BaseMemory` | `[llamaindex]` | [llamaindex_integration.py](examples/llamaindex_integration.py) |
 | **Redis** backend | `[redis]` | [redis_backend.py](examples/redis_backend.py) |
@@ -508,245 +216,82 @@ All examples live in [`examples/`](examples/) with full setup instructions.
 | **Confidence + Graph** | *(none)* | [confidence_and_graph.py](examples/confidence_and_graph.py) |
 | **Benchmark harness** | *(none)* | [benchmark_harness.py](examples/benchmark_harness.py) |
 
-→ **[examples/README.md](examples/README.md)** — setup instructions, mini code snippets, and descriptions for every example.
+→ Setup instructions and code snippets for each: **[examples/README.md](examples/README.md)**
 
 ---
 
-## 🔌 MCP Server Integration
-
-Expose Agent Memory as MCP tools for Cursor, VS Code, and other MCP-compatible agents.
-
-### Configuration for Cursor
-
-Add to `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "agent-memory": {
-      "command": "agent-memory-mcp",
-      "env": {
-        "AGENT_MEMORY_DIR": "~/.agent_memory"
-      }
-    }
-  }
-}
-```
-
-### Available MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `remember_memory` | Store a query/response pair |
-| `resolve_memory` | Retrieve and decide action |
-| `list_memories` | List with pagination |
-| `get_memory` | Fetch single memory |
-| `forget_memory` | Delete memory |
-| `archive_memory` | Archive memory |
-| `consolidate_memories` | Merge duplicates |
-
-### Docker-based MCP (Recommended)
-
-```json
-{
-  "mcpServers": {
-    "agent-memory": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-v", "agent_memory_data:/home/appuser/.agent_memory",
-        "ghcr.io/theprodsde/agent-memory-sdk:latest",
-        "agent-memory-mcp"
-      ]
-    }
-  }
-}
-```
-
----
-
-## 📊 CLI Reference
-
-```bash
-# Show help
-agent-memory --help
-
-# Store a memory
-agent-memory remember "query" "response" \
-  --type conversation \
-  --scope user \
-  --ttl 30d
-
-# Resolve a query
-agent-memory resolve "query" --explain
-
-# Show statistics
-agent-memory stats
-
-# Cleanup expired memories
-agent-memory cleanup --delete
-
-# Run benchmark
-agent-memory benchmark --seed --repeat 3
-
-# Run evaluation
-agent-memory eval --datasets ./benchmarks/datasets
-```
-
----
-
-## 🏃 Benchmark & Evaluation
-
-### Benchmark
-
-```bash
-# Quick benchmark with default queries
-agent-memory benchmark
-
-# With seeded data from eval datasets
-agent-memory benchmark --seed --repeat 3
-
-# Custom baseline comparison
-agent-memory benchmark --baseline-ms 500
-```
-
-### Evaluation
-
-```bash
-# Run all datasets
-agent-memory eval
-
-# Specific dataset directory
-agent-memory eval --datasets ./benchmarks/datasets
-```
-
-**Included Datasets:**
-- `coding_agent.json` - Code-related queries
-- `customer_support.json` - Support scenarios
-- `research_agent.json` - Research workflows
-
----
-
-## 🚢 Release
-
-Releases are **fully automated by CI** — push a version tag, all tests pass, PyPI and GitHub Release are created automatically.
-
-```bash
-git tag v0.3.0 && git push origin v0.3.0
-# CI runs: test matrix (3.10–3.13) → extras test → build → PyPI → GitHub Release
-```
-
-→ Full process, versioning guide, and rollback: **[docs/release.md](docs/release.md)**
-
-
-## 📈 Status & Roadmap
-
-All planned features through v0.5.0 are **shipped**.
-Track what's next on the **[GitHub Project board →](https://github.com/users/theprodsde/projects/2)**
-
-→ Full feature list and upcoming work: **[docs/roadmap.md](docs/roadmap.md)**
-
-
-## 🛡️ Tech Stack
+## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
 | **Language** | Python 3.10+ |
-| **Storage** | SQLite (FTS5, optional sqlite-vec) · ChromaDB · Redis · PostgreSQL |
-| **Retrieval** | BM25 + coverage scaling + Vector KNN + RRF fusion |
-| **Interfaces** | MCP server · FastAPI REST · Streamlit dashboard · CLI |
-| **Framework adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
-| **Dev infra** | Docker Compose (Redis + Postgres) |
-| **Testing** | pytest · pytest-asyncio · fakeredis · playwright |
-| **Linting / types** | ruff · mypy |
-| **CI/CD** | GitHub Actions (test matrix 3.10–3.13 → release gate → PyPI) |
+| **Storage** | SQLite · ChromaDB · Redis · PostgreSQL |
+| **Retrieval** | BM25 FTS5 + Vector KNN + RRF fusion |
+| **Interfaces** | MCP · FastAPI · Streamlit · CLI |
+| **Adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
+| **Testing** | pytest (196 tests) · ruff · mypy |
+| **CI/CD** | GitHub Actions — test matrix 3.10–3.13 → release gate → PyPI |
 
-**No API keys required** — everything runs locally.
+No API keys required — everything runs locally.
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-- **[Getting Started](docs/getting-started.md)** — Installation and basic usage
-- **[Architecture](docs/architecture.md)** — Deep dive into the system design
-- **[Memory Model](docs/memory-model.md)** — Memory types, scopes, and states
-- **[Policies](docs/policies.md)** — Customising scoring and decision logic
-- **[Benchmarks](docs/benchmarks.md)** — Measured results and reproduce commands
-- **[Roadmap](docs/roadmap.md)** — Shipped features and what's next
-- **[Release Process](docs/release.md)** — How to cut a release (CI-automated)
-- **[Examples](examples/README.md)** — Runnable samples for every integration
-- **[Why a Decision Layer?](docs/why-decision-layer.md)** — The failure mode this project exists to fix
-- **[FAQ](docs/faq.md)** — Common questions and troubleshooting
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for
-good first issues and the review checklist. Quick version:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests (`python -m pytest tests/`)
-5. Run linting (`ruff check agent_memory/ tests/`)
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/TheProdSDE/agent-memory-sdk.git
-cd agent-memory-sdk
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-# Install in development mode
-pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pip install pre-commit
-pre-commit install
-
-# Run tests
-make test
-
-# Run all checks
-make check
-```
+| Doc | Contents |
+|-----|----------|
+| [docs/usage.md](docs/usage.md) | Integration pattern, API reference, MemoryEntry / MemoryDecision fields |
+| [docs/features.md](docs/features.md) | Decision actions, hybrid retrieval, types, scopes, TTL, graph, multi-agent |
+| [docs/mcp.md](docs/mcp.md) | MCP server setup for Cursor, Claude Code, VS Code; Docker config |
+| [docs/cli.md](docs/cli.md) | CLI commands, REST API server, dashboard launch, eval dataset format |
+| [docs/roadmap.md](docs/roadmap.md) | All shipped features, what's next, GitHub Project board |
+| [docs/release.md](docs/release.md) | CI-automated release process, versioning, rollback |
+| [docs/architecture.md](docs/architecture.md) | Retrieval pipeline, scoring policy, system design |
+| [docs/comparison.md](docs/comparison.md) | Feature matrix vs Redis, mem0, Zep, LangMem, LlamaIndex, MemGPT |
+| [docs/benchmarks.md](docs/benchmarks.md) | Measured results and reproduce commands |
+| [docs/why-decision-layer.md](docs/why-decision-layer.md) | The failure mode this project exists to fix |
+| [examples/README.md](examples/README.md) | Index of all runnable examples |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test commands, PR checklist |
 
 ---
 
-## 📜 License
+## Status & Roadmap
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+All planned features through v0.5.0 are **shipped**.
+Track what's next on the **[GitHub Project →](https://github.com/users/theprodsde/projects/2)**
 
----
+→ **[docs/roadmap.md](docs/roadmap.md)**
 
-## 🙏 Acknowledgments
+## Release
 
-- **[ChromaDB](https://github.com/chroma-core/chroma)** - Vector database
-- **[Rank-BM25](https://github.com/dorianbrown/rank_bm25)** - BM25 implementation
-- **[MCP](https://github.com/modelcontextprotocol/python-sdk)** - Model Context Protocol
-- **[FastMCP](https://github.com/modelcontextprotocol/fastmcp)** - MCP server framework
+Tag-triggered, fully CI-gated: `git tag v0.x.y && git push origin v0.x.y`
 
----
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/TheProdSDE/agent-memory-sdk/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/TheProdSDE/agent-memory-sdk/discussions)
-- **Email**: theprodsde@gmail.com
+→ **[docs/release.md](docs/release.md)**
 
 ---
 
-> **Agent Memory helps agents decide:**
-> **Replay → Restore → Verify → Ignore**
+## Contributing
 
-> **Built with ❤️ by [TheProdSDE](https://github.com/TheProdSDE)**
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for dev setup, test commands, and the PR checklist.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Support
+
+- **Issues:** [GitHub Issues](https://github.com/TheProdSDE/agent-memory-sdk/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/TheProdSDE/agent-memory-sdk/discussions)
+- **Email:** theprodsde@gmail.com
+
+---
+
+> **Agent Memory helps agents decide: Replay → Restore → Verify → Ignore**
+>
+> Built with ❤️ by [TheProdSDE](https://github.com/TheProdSDE)
 
 mcp-name: io.github.theprodsde/agent-memory

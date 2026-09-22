@@ -9,8 +9,34 @@ from agent_memory.benchmarks.harness import (
 )
 from agent_memory.confidence import ConfidenceEvent, ConfidenceLearner, ConfidenceUpdate
 from agent_memory.decision import DecisionEngine
+from agent_memory.entity_extractor import EntityExtractor, ExtractedMemory
 from agent_memory.eval import EvalDataset, EvalResult, format_eval_report, run_eval, run_eval_suite
+from agent_memory.exceptions import (
+    AgentMemoryError,
+    BackendConnectionError,
+    ConfigurationError,
+    DecisionError,
+    ExtractionError,
+    MemoryNotFoundError,
+    MemoryStoreError,
+    MemoryWriteError,
+    RetrievalError,
+)
 from agent_memory.graph import MemoryEdge, MemoryGraph
+from agent_memory.knowledge_graph import (
+    CompositeExtractionStrategy,
+    EntityExtractionStrategy,
+    EntityType,
+    ExtractionResult,
+    GraphBuilder,
+    KnowledgeEntity,
+    KnowledgeGraph,
+    KnowledgeRelation,
+    PatternExtractionStrategy,
+    RelationType,
+    SpacyExtractionStrategy,
+)
+from agent_memory.logging_config import configure_debug_logging, get_logger
 from agent_memory.manager import Memory, MemoryManager
 from agent_memory.models import (
     MemoryAction,
@@ -22,7 +48,9 @@ from agent_memory.models import (
     RetrievalResult,
 )
 from agent_memory.multiagent import IsolationMode, MultiAgentMemory
+from agent_memory.paged_memory import PagedContext, PagedMemory
 from agent_memory.policy import DecisionPolicy, DefaultPolicy
+from agent_memory.retriever import FusionStrategy, LinearFusionStrategy, RRFFusionStrategy
 from agent_memory.sqlite_store import SqliteMemoryStore
 
 try:
@@ -36,6 +64,35 @@ __all__ = [
     "BenchmarkResult",
     "HarnessConfig",
     "HarnessResult",
+    "EntityExtractor",
+    "EntityType",
+    "ExtractedMemory",
+    "AgentMemoryError",
+    "BackendConnectionError",
+    "CompositeExtractionStrategy",
+    "ConfigurationError",
+    "DecisionError",
+    "ExtractionError",
+    "FusionStrategy",
+    "LinearFusionStrategy",
+    "MemoryNotFoundError",
+    "MemoryStoreError",
+    "MemoryWriteError",
+    "RRFFusionStrategy",
+    "RetrievalError",
+    "configure_debug_logging",
+    "get_logger",
+    "EntityExtractionStrategy",
+    "ExtractionResult",
+    "GraphBuilder",
+    "KnowledgeEntity",
+    "KnowledgeGraph",
+    "KnowledgeRelation",
+    "PagedContext",
+    "PagedMemory",
+    "PatternExtractionStrategy",
+    "RelationType",
+    "SpacyExtractionStrategy",
     "ConfidenceEvent",
     "ConfidenceLearner",
     "ConfidenceUpdate",

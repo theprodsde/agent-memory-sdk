@@ -178,6 +178,22 @@ class MemoryStore(ABC):
         """Return the total number of stored memories."""
         ...
 
+    def touch(self, memory_id: str) -> bool:
+        """Increment access_count and set last_accessed_at for *memory_id*.
+
+        This is a lightweight write used on REPLAY — it must NOT update the
+        FTS5 / vector indexes (they are keyed on content, not usage metadata).
+        The default implementation fetches, mutates, and updates; backends
+        should override with a direct SQL UPDATE for speed.
+        Returns True if the entry was found, False otherwise.
+        """
+        entry = self.get(memory_id)
+        if entry is None:
+            return False
+        entry.touch()
+        self.update(entry)
+        return True
+
     def stats(self) -> dict[str, Any]:
         """Aggregate memory statistics.
 

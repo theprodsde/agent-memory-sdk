@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from agent_memory.embeddings import Embedder, embedding_dimension, get_default_embedder
+from agent_memory.exceptions import BackendConnectionError
+from agent_memory.logging_config import get_logger
 from agent_memory.models import MemoryEntry, MemoryScope, MemoryState, MemoryType
 from agent_memory.store import MemoryStore, _tokenize, bm25_scores, query_coverage
+
+log = get_logger(__name__)
 
 
 class SqliteMemoryStore(MemoryStore):
@@ -34,18 +39,52 @@ class SqliteMemoryStore(MemoryStore):
         self._vec_enabled = False
         self._embedder: Embedder | None = None
         self._vec_dim = 0
-        self._init_db()
+        # Thread-local connection cache: one live connection per thread avoids
+        # the ~2–3 ms overhead of sqlite3.connect() on every query.
+        self._local = threading.local()
+        try:
+            self._init_db()
+        except sqlite3.Error as exc:
+            raise BackendConnectionError("sqlite", str(exc)) from exc
+        log.info("SQLite store ready  path=%s", self.db_path)
         if enable_embeddings is True or enable_embeddings == "auto":
             self._init_embeddings(embedder, required=enable_embeddings is True)
 
     def _connect(self) -> sqlite3.Connection:
-        # timeout retries on SQLITE_BUSY so concurrent writers (MCP server,
-        # CLI, app code sharing one DB file) don't immediately fail.
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        """Return a cached per-thread SQLite connection.
+
+        Re-uses the same live connection within a thread to avoid the overhead
+        of sqlite3.connect() on every query.  The cached connection is trusted;
+        if a genuine closed-connection error surfaces from a query, callers
+        should call close() and retry.
+        """
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is not None:
+            return conn
+
+        conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
         conn.execute("PRAGMA foreign_keys = ON")
+        # Performance pragmas applied once per connection:
+        #   cache_size  — 32 MB page cache (default ≈ 2 MB)
+        #   temp_store  — temp tables in memory, not on disk
+        #   mmap_size   — 128 MB memory-mapped I/O for reads
+        conn.execute("PRAGMA cache_size = -32000")
+        conn.execute("PRAGMA temp_store = memory")
+        conn.execute("PRAGMA mmap_size = 134217728")
         if self._vec_enabled:
             self._load_vec_extension(conn)
+        self._local.conn = conn
         return conn
+
+    def close(self) -> None:
+        """Explicitly release the cached connection for this thread."""
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self._local.conn = None
 
     # ------------------------------------------------------------------
     # Schema
@@ -163,6 +202,10 @@ class SqliteMemoryStore(MemoryStore):
             conn.commit()
         finally:
             conn.close()
+        # The thread-local cached connection (created before _vec_enabled was set)
+        # has no vec extension loaded.  Invalidate it so the next _connect() call
+        # creates a fresh connection that goes through the vec extension setup.
+        self.close()
 
     @staticmethod
     def _load_vec_extension(conn: sqlite3.Connection) -> bool:
@@ -210,7 +253,8 @@ class SqliteMemoryStore(MemoryStore):
             cursor = conn.execute("SELECT COUNT(*) FROM memories")
             return int(cursor.fetchone()[0])
 
-    def store(self, entry: MemoryEntry) -> MemoryEntry:
+    def store(self, entry: MemoryEntry) -> MemoryEntry:  # type: ignore[override]
+        log.debug("store  id=%s  type=%s  scope=%s", entry.id[:8], entry.type.value, entry.scope.value)
         entry.refresh_state()
         with self._connect() as conn:
             # Upsert (not INSERT OR REPLACE) so the rowid stays stable —
@@ -289,10 +333,25 @@ class SqliteMemoryStore(MemoryStore):
                 return None
             return self._row_to_entry(row)
 
+    def touch(self, memory_id: str) -> bool:
+        """Fast access-count increment — single SQL UPDATE, no FTS5 reindex.
+
+        Only ``access_count`` is updated; content fields are unchanged so the
+        FTS5 and vector indexes do not need to be rebuilt.
+        """
+        conn = self._connect()
+        cursor = conn.execute(
+            "UPDATE memories SET access_count = access_count + 1 WHERE id = ?",
+            (memory_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
     def update(self, entry: MemoryEntry) -> MemoryEntry:
         return self.store(entry)
 
     def delete(self, memory_id: str) -> bool:
+        log.debug("delete  id=%s", memory_id[:8])
         with self._connect() as conn:
             self._delete_index_rows(conn, "id = ?", [memory_id])
             cursor = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
