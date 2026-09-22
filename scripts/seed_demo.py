@@ -245,7 +245,7 @@ def seed(data_dir: str = "/tmp/agent_memory_demo") -> Memory:
 
     # ── Archived / expired entries (to show non-active states) ────────────────
     past = datetime.now(timezone.utc) - timedelta(days=2)
-    e1 = m.store.store(__import__("agent_memory.models", fromlist=["MemoryEntry"]).MemoryEntry(
+    m.store.store(__import__("agent_memory.models", fromlist=["MemoryEntry"]).MemoryEntry(
         query="Old API endpoint — /v1/users (deprecated)",
         response="The /v1/users endpoint was removed in v2. Use /v2/accounts instead.",
         type=MemoryType.FACT, scope=MemoryScope.PROJECT,
@@ -254,7 +254,7 @@ def seed(data_dir: str = "/tmp/agent_memory_demo") -> Memory:
     ))
 
     future = datetime.now(timezone.utc) - timedelta(hours=1)
-    e2 = m.store.store(__import__("agent_memory.models", fromlist=["MemoryEntry"]).MemoryEntry(
+    m.store.store(__import__("agent_memory.models", fromlist=["MemoryEntry"]).MemoryEntry(
         query="Temporary maintenance window tonight",
         response="Scheduled maintenance 02:00–04:00 UTC on 2024-01-15. API will be unavailable.",
         type=MemoryType.FACT, scope=MemoryScope.GLOBAL,

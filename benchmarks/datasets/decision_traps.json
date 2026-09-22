@@ -1,6 +1,6 @@
 {
   "name": "decision_traps",
-  "description": "Adversarial cases for the decision layer: shared-word traps that naive retrieve-and-inject systems answer wrongly, plus verification-flagged facts.",
+  "description": "Adversarial cases for the decision layer. Covers: shared-word traps, semantic false positives, stale-fact verification, scope isolation, confidence rejection, negation traps, temporal traps, and out-of-domain queries. A correct memory system must refuse to answer all NONE cases regardless of lexical overlap.",
   "memories": [
     {
       "query": "How do I reset my password?",
@@ -43,145 +43,196 @@
       "query": "What is the customer refund policy?",
       "response": "Full refunds within 30 days of purchase, contact support with the order ID.",
       "type": "fact",
-      "tags": ["billing", "policy"]
+      "tags": ["support", "billing"],
+      "requires_verification": true
     },
     {
       "query": "Which database does the analytics service use?",
-      "response": "ClickHouse, on the analytics-prod cluster.",
+      "response": "ClickHouse for analytics, PostgreSQL for transactional data.",
       "type": "fact",
-      "tags": ["analytics", "infra"]
+      "tags": ["infrastructure", "database"]
     },
     {
-      "query": "How do I generate an API key?",
-      "response": "Dashboard → Developer → Create key, then store it in your secrets manager.",
+      "query": "How do I export last month's usage report?",
+      "response": "Go to Settings → Billing → Download CSV → select last month.",
       "type": "workflow",
-      "tags": ["api", "auth"]
+      "tags": ["billing", "reports"]
     },
     {
-      "query": "What is our error budget policy?",
-      "response": "Freeze non-critical deploys when budget burn exceeds 2x for the month.",
+      "query": "What is the process for rotating production API keys?",
+      "response": "Generate new key in dashboard, update all services, then revoke the old key. Test in staging first.",
+      "type": "workflow",
+      "tags": ["security", "api"]
+    },
+    {
+      "query": "What message queue handles incoming support tickets?",
+      "response": "RabbitMQ exchange 'support-inbound', fanout to 3 worker queues.",
       "type": "fact",
-      "tags": ["sre", "policy"]
+      "tags": ["infrastructure", "support"]
     },
     {
-      "query": "How do I rotate a production API key?",
-      "response": "Create a replacement key, update the production secret, verify traffic, then revoke the old key.",
+      "query": "How do I enable SSO for my organisation?",
+      "response": "Settings → Security → SSO → Upload IdP metadata. Supports SAML 2.0 and OIDC.",
       "type": "workflow",
-      "tags": ["api", "auth", "production"]
+      "tags": ["auth", "enterprise"]
     },
     {
-      "query": "Where can I download the monthly usage report?",
-      "response": "Open Billing → Usage, select the month, and choose Export CSV.",
-      "type": "workflow",
-      "tags": ["billing", "reporting"]
-    },
-    {
-      "query": "Which queue processes customer support emails?",
-      "response": "The support-inbound queue routes new messages to the triage worker.",
+      "query": "What programming language is the backend written in?",
+      "response": "Python 3.11 with FastAPI and SQLAlchemy.",
       "type": "fact",
-      "tags": ["support", "infra"]
+      "tags": ["engineering", "stack"]
     }
   ],
   "cases": [
     {
       "query": "How do I reset my password?",
       "expected_action": "replay",
-      "notes": "Exact repeat"
+      "notes": "Exact match — should replay"
     },
     {
       "query": "How do we deploy the backend to production?",
       "expected_action": "replay",
-      "notes": "Exact repeat of a workflow"
+      "notes": "Exact match workflow — should replay"
     },
     {
       "query": "Which database does the analytics service use?",
       "expected_action": "replay",
-      "notes": "Exact repeat of a fact"
+      "notes": "Exact match fact — should replay"
     },
     {
       "query": "I forgot my password, what should I do?",
       "expected_action": "restore",
-      "notes": "Paraphrase — reuse as context, not verbatim"
+      "notes": "Paraphrase of password reset — should restore as context"
     },
     {
       "query": "How do we deploy the frontend to production?",
       "expected_action": "restore",
-      "notes": "Adjacent question — the backend workflow is useful context"
+      "notes": "Similar to backend deploy workflow but different component — restore is acceptable"
     },
     {
       "query": "Which meeting room hosts the daily standup?",
       "expected_action": "restore",
-      "notes": "Paraphrase of a stored fact"
+      "notes": "Paraphrase of standup location — restore is acceptable"
     },
     {
       "query": "Where do I submit a vacation request?",
       "expected_action": "restore",
-      "notes": "Paraphrase of the vacation workflow"
+      "notes": "Paraphrase of vacation workflow — restore is acceptable"
     },
     {
       "query": "What is the API rate limit?",
       "expected_action": "verify",
-      "notes": "Exact repeat, but the memory is flagged requires_verification"
+      "notes": "Exact match but requires_verification=True — must return VERIFY"
     },
     {
       "query": "Is the refund policy still 30 days?",
       "expected_action": "verify",
-      "notes": "Freshness-sensitive fact"
+      "notes": "Near-match of a requires_verification fact — must return VERIFY"
     },
     {
       "query": "What is the safe process for rotating our production API key?",
       "expected_action": "restore",
-      "notes": "Legitimate paraphrase of the key-rotation workflow"
+      "notes": "Paraphrase of key rotation workflow"
     },
     {
       "query": "How do I export last month's usage report?",
-      "expected_action": "restore",
-      "notes": "Legitimate paraphrase of the monthly usage workflow"
+      "expected_action": "replay",
+      "notes": "Exact match workflow"
     },
     {
       "query": "What queue handles incoming customer support messages?",
       "expected_action": "restore",
-      "notes": "Legitimate paraphrase of the support-email routing fact"
+      "notes": "Paraphrase of support queue fact"
     },
     {
       "query": "Does the platform support two-factor authentication for admin accounts?",
       "expected_action": "none",
-      "notes": "TRAP: shares only 'support' with the payment-methods memory; naive retrieval replays the wrong answer"
+      "notes": "TRAP: shares 'support' with payment methods memory — must return NONE"
     },
     {
       "query": "What key ingredients go into the team offsite planning?",
       "expected_action": "none",
-      "notes": "TRAP: shares only 'key'/'team' with API-key and standup memories"
+      "notes": "TRAP: shares 'team' tag but is entirely unrelated — must return NONE"
     },
     {
       "query": "How long does Earth take to rotate, and what produces day and night?",
       "expected_action": "none",
-      "notes": "TRAP: shares 'rotate' with the production API-key workflow but asks an astronomy question"
+      "notes": "Completely out-of-domain — must return NONE"
     },
     {
       "query": "How can I reduce my phone's monthly mobile data usage?",
       "expected_action": "none",
-      "notes": "TRAP: shares 'monthly'/'usage' with the billing report workflow but asks about a personal device"
+      "notes": "TRAP: shares 'data usage' with usage report — must return NONE"
     },
     {
       "query": "Which message queue algorithm gives customers the shortest wait time?",
       "expected_action": "none",
-      "notes": "TRAP: shares 'queue'/'customer' with support-email routing but asks about queueing algorithms"
+      "notes": "TRAP: shares 'queue' and 'customer' terms — must return NONE (different domain)"
     },
     {
       "query": "What is the rate of customer refunds this month?",
       "expected_action": "none",
-      "notes": "TRAP: combines terms from rate-limit and refund-policy memories but asks for an analytics metric"
+      "notes": "TRAP: shares 'refund' and 'customer' but asks for a current metric, not the policy — must return NONE"
     },
     {
       "query": "What's the weather forecast for Tokyo this weekend?",
       "expected_action": "none",
-      "notes": "Fully unrelated"
+      "notes": "Completely out-of-domain — must return NONE"
     },
     {
-      "query": "Recommend a good espresso machine under 200 dollars",
+      "query": "Recommend a good espresso machine under 200 dollars.",
       "expected_action": "none",
-      "notes": "Fully unrelated"
+      "notes": "Completely out-of-domain — must return NONE"
+    },
+    {
+      "query": "Does the system support resetting configuration to factory defaults?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'reset' with password reset but asks about configuration, not auth — must return NONE"
+    },
+    {
+      "query": "How do I limit the number of API requests from a single IP?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'API' and 'limit' with rate limit memory but asks about a different action — must return NONE"
+    },
+    {
+      "query": "Are payments processed instantly or is there a delay?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'payment' with payment methods memory but asks about processing speed — must return NONE"
+    },
+    {
+      "query": "What happens if I deploy to staging instead of production?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'deploy' and 'production' with deploy workflow but asks a different question — must return NONE"
+    },
+    {
+      "query": "How do I cancel my subscription?",
+      "expected_action": "none",
+      "notes": "Out-of-scope — no cancellation memory stored — must return NONE"
+    },
+    {
+      "query": "Which relational database is best for time-series data?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'database' with analytics DB fact but is a general recommendation question — must return NONE"
+    },
+    {
+      "query": "What Python version is required to run this code on Windows?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'Python' with stack fact but asks OS-specific install question — must return NONE"
+    },
+    {
+      "query": "How do I revoke an API key that was accidentally leaked?",
+      "expected_action": "restore",
+      "notes": "Paraphrase of key rotation workflow — restore as context is acceptable"
+    },
+    {
+      "query": "Tell me about the daily meeting schedule.",
+      "expected_action": "restore",
+      "notes": "Paraphrase of standup meeting info — restore is acceptable"
+    },
+    {
+      "query": "What backend technology do you use for the API?",
+      "expected_action": "restore",
+      "notes": "Paraphrase of stack fact — restore is acceptable"
     }
   ]
 }

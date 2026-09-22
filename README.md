@@ -42,6 +42,41 @@ Adversarial eval: **25/25 (100%)** on trap queries — see [benchmarks](docs/ben
 
 ---
 
+## When to use it — real use cases
+
+| Use case | Without memory | With Agent Memory | Saving |
+|----------|---------------|-------------------|--------|
+| **Support bot** handling 10k identical FAQ queries/day | Every query costs 1 LLM call | ~75% REPLAY on repeated questions, 0 LLM calls | **75% cost reduction** |
+| **Coding agent** that re-derives project conventions each session | Wastes 2–5 LLM calls per session to "remember" conventions | Workflows are REPLAYED instantly on first query | **No re-derivation overhead** |
+| **Research agent** building knowledge over multiple sessions | Each session starts cold; re-reads the same sources | Facts and summaries are RESTORED as context | **Persistent cross-session knowledge** |
+| **Customer onboarding** bot answering the same steps repeatedly | Always generates a response | High-confidence workflows are REPLAYED verbatim | **Consistent identical answers** |
+| **Tool-output caching** for expensive API calls | Calls the external API every time | Results stored with TTL; REPLAY within TTL, re-call after | **Reduced external API cost** |
+| **Policy-compliance agent** that must verify facts before replaying | Silent hallucination risk on stale data | `requires_verification=True` ensures VERIFY fires; stale facts are never replayed silently | **Auditability + safety** |
+
+### Where Agent Memory saves real money
+
+A GPT-4o call costs ~$0.005. A support agent handling 50,000 queries/day with 70% repeat rate:
+- Without memory: 50,000 × $0.005 = **$250/day**
+- With Agent Memory: 15,000 LLM calls + cache misses = **$75/day**
+- **Saving: ~$175/day (~$64k/year)**
+
+A REPLAY costs ~0.05ms of in-process computation. An LLM call takes 300–2,000ms and costs tokens.
+
+### Is it right for your use case?
+
+**Good fit:**
+- Agent answers the same or similar questions across sessions
+- You have fact-sensitive answers that can go stale (prices, limits, policies)
+- Multiple agents or services share a knowledge base
+- You need audit trails — knowing *which* memory answered and why
+
+**Not the right tool:**
+- Document RAG over a corpus of files → use a vector database for that
+- Replacing your application's source-of-truth database
+- Agents that never repeat similar queries
+
+---
+
 ## Features at a glance
 
 | Feature | What it does |
@@ -248,7 +283,8 @@ No API keys required — everything runs locally.
 | [docs/release.md](docs/release.md) | CI-automated release process, versioning, rollback |
 | [docs/architecture.md](docs/architecture.md) | Retrieval pipeline, scoring policy, system design |
 | [docs/comparison.md](docs/comparison.md) | Feature matrix vs Redis, mem0, Zep, LangMem, LlamaIndex, MemGPT |
-| [docs/benchmarks.md](docs/benchmarks.md) | Measured results and reproduce commands |
+| [docs/stress-testing.md](docs/stress-testing.md) | 10K / 100K / 1M latency benchmarks with methodology |
+| [docs/benchmarks.md](docs/benchmarks.md) | Eval results and reproduce commands |
 | [docs/why-decision-layer.md](docs/why-decision-layer.md) | The failure mode this project exists to fix |
 | [examples/README.md](examples/README.md) | Index of all runnable examples |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test commands, PR checklist |

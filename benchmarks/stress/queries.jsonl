@@ -1,0 +1,63 @@
+{"query": "How do I reset my password?", "category": "auth", "expected": "hit"}
+{"query": "I forgot my password", "category": "auth", "expected": "hit"}
+{"query": "password reset instructions", "category": "auth", "expected": "hit"}
+{"query": "how to change my login credentials", "category": "auth", "expected": "hit"}
+{"query": "account recovery steps", "category": "auth", "expected": "hit"}
+{"query": "How do I enable 2FA?", "category": "auth", "expected": "hit"}
+{"query": "two-factor authentication setup", "category": "auth", "expected": "hit"}
+{"query": "enable multi-factor authentication", "category": "auth", "expected": "hit"}
+{"query": "What are the API rate limits?", "category": "api", "expected": "verify"}
+{"query": "API request quota per minute", "category": "api", "expected": "hit"}
+{"query": "how many API calls can I make?", "category": "api", "expected": "hit"}
+{"query": "rate limiting on free tier", "category": "api", "expected": "hit"}
+{"query": "API usage limits per key", "category": "api", "expected": "hit"}
+{"query": "How do I authenticate API requests?", "category": "api", "expected": "hit"}
+{"query": "bearer token authentication for API", "category": "api", "expected": "hit"}
+{"query": "API authentication method", "category": "api", "expected": "hit"}
+{"query": "Python SDK setup", "category": "sdk", "expected": "hit"}
+{"query": "getting started with Python library", "category": "sdk", "expected": "hit"}
+{"query": "Node.js SDK example", "category": "sdk", "expected": "hit"}
+{"query": "JavaScript client initialisation", "category": "sdk", "expected": "hit"}
+{"query": "What payment methods are supported?", "category": "billing", "expected": "hit"}
+{"query": "accepted credit cards", "category": "billing", "expected": "hit"}
+{"query": "subscription pricing options", "category": "billing", "expected": "hit"}
+{"query": "how much does Pro plan cost?", "category": "billing", "expected": "hit"}
+{"query": "How do I invite someone to the team?", "category": "team", "expected": "hit"}
+{"query": "adding a new team member", "category": "team", "expected": "hit"}
+{"query": "What are the available user roles?", "category": "team", "expected": "hit"}
+{"query": "permissions and access control", "category": "team", "expected": "hit"}
+{"query": "How do I enable SSO?", "category": "auth", "expected": "hit"}
+{"query": "SAML single sign-on configuration", "category": "auth", "expected": "hit"}
+{"query": "Does the API support webhooks?", "category": "api", "expected": "hit"}
+{"query": "webhook endpoint setup", "category": "api", "expected": "hit"}
+{"query": "event notification callbacks", "category": "api", "expected": "hit"}
+{"query": "dark mode UI preference", "category": "preference", "expected": "hit"}
+{"query": "timezone display setting", "category": "preference", "expected": "hit"}
+{"query": "enterprise uptime guarantee", "category": "sla", "expected": "verify"}
+{"query": "P1 incident response time", "category": "sla", "expected": "hit"}
+{"query": "Slack integration setup", "category": "integration", "expected": "hit"}
+{"query": "connect Slack workspace", "category": "integration", "expected": "hit"}
+{"query": "What is the refund policy?", "category": "billing", "expected": "verify"}
+{"query": "30-day money-back guarantee", "category": "billing", "expected": "hit"}
+{"query": "export usage data to CSV", "category": "data", "expected": "hit"}
+{"query": "data retention period", "category": "data", "expected": "hit"}
+{"query": "How do we deploy to production?", "category": "engineering", "expected": "hit"}
+{"query": "CI/CD deployment workflow", "category": "engineering", "expected": "hit"}
+{"query": "How do I rotate an API key?", "category": "security", "expected": "hit"}
+{"query": "revoke compromised credentials", "category": "security", "expected": "hit"}
+{"query": "analytics database technology", "category": "engineering", "expected": "hit"}
+{"query": "message queue infrastructure", "category": "engineering", "expected": "hit"}
+{"query": "cancel subscription steps", "category": "billing", "expected": "hit"}
+{"query": "upgrade to paid plan", "category": "billing", "expected": "hit"}
+{"query": "What is the capital of France?", "category": "ood", "expected": "none"}
+{"query": "Best recipe for banana bread", "category": "ood", "expected": "none"}
+{"query": "How does quantum computing work?", "category": "ood", "expected": "none"}
+{"query": "Recommend a good espresso machine", "category": "ood", "expected": "none"}
+{"query": "History of the Roman Empire", "category": "ood", "expected": "none"}
+{"query": "How do I train a neural network?", "category": "ood", "expected": "none"}
+{"query": "Stock market prediction strategies", "category": "ood", "expected": "none"}
+{"query": "Explain climate change science", "category": "ood", "expected": "none"}
+{"query": "Best way to learn guitar", "category": "ood", "expected": "none"}
+{"query": "Marathon training plan for beginners", "category": "ood", "expected": "none"}
+{"query": "What is the Pythagorean theorem?", "category": "ood", "expected": "none"}
+{"query": "Compare React vs Vue frameworks", "category": "ood", "expected": "none"}
