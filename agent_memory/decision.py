@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import time
+
+from agent_memory.exceptions import DecisionError
 from agent_memory.explain import enrich_decision
+from agent_memory.logging_config import get_logger
 from agent_memory.models import MemoryAction, MemoryDecision, MemoryScope, RetrievalResult
 from agent_memory.policy import DecisionPolicy, DefaultPolicy
 from agent_memory.retriever import MemoryRetriever
+
+log = get_logger(__name__)
 
 
 class DecisionEngine:
@@ -34,16 +40,21 @@ class DecisionEngine:
         scopes: list[MemoryScope] | None = None,
         enable_verify: bool = True,
     ) -> MemoryDecision:
-        results = self._retriever.retrieve(query, top_k=top_k, scopes=scopes)
+        t0 = time.perf_counter()
+        try:
+            results = self._retriever.retrieve(query, top_k=top_k, scopes=scopes)
+        except Exception as exc:
+            raise DecisionError(f"Retrieval failed during decide: {exc}") from exc
+
         if not results:
-            decision = MemoryDecision(
+            log.debug("decide  NONE  query=%r  reason='no memories'", query)
+            return MemoryDecision(
                 action=MemoryAction.NONE,
                 query=query,
                 confidence=0.0,
                 reason="No memories stored yet.",
                 reasons=["no memories stored"],
             )
-            return decision
 
         if mode == "replay":
             decision = self._decide_replay(query, results[0])
@@ -54,12 +65,23 @@ class DecisionEngine:
         else:
             decision = self._decide_auto(query, results, enable_verify=enable_verify)
 
-        return enrich_decision(
+        enriched = enrich_decision(
             decision,
             self._policy,
             replay_threshold=self.replay_threshold,
             restore_threshold=self.restore_threshold,
         )
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.debug(
+            "decide  %.2fms  action=%s  conf=%.2f  query=%r  reasons=%r",
+            elapsed_ms,
+            enriched.action.value,
+            enriched.confidence,
+            query,
+            enriched.reasons,
+        )
+        return enriched
 
     def _decide_auto(
         self,
@@ -144,6 +166,10 @@ class DecisionEngine:
     def _finalize_replay(self, query: str, best: RetrievalResult, reason: str) -> MemoryDecision:
         updated = self._retriever.record_access(best.entry)
         best.entry = updated
+        log.debug(
+            "REPLAY  conf=%.2f  matched=%r  accesses=%d",
+            best.decision_score, updated.query[:60], updated.access_count,
+        )
         return MemoryDecision(
             action=MemoryAction.REPLAY,
             query=query,
@@ -155,6 +181,10 @@ class DecisionEngine:
         )
 
     def _finalize_verify(self, query: str, best: RetrievalResult, reason: str) -> MemoryDecision:
+        log.debug(
+            "VERIFY  conf=%.2f  matched=%r  type=%s",
+            best.decision_score, best.entry.query[:60], best.entry.type.value,
+        )
         return MemoryDecision(
             action=MemoryAction.VERIFY,
             query=query,

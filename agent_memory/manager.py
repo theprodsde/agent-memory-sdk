@@ -5,12 +5,17 @@ import builtins
 from pathlib import Path
 
 from agent_memory.decision import DecisionEngine
+from agent_memory.entity_extractor import EntityExtractor, ExtractedMemory
+from agent_memory.exceptions import ConfigurationError
+from agent_memory.logging_config import get_logger
 from agent_memory.models import MemoryDecision, MemoryEntry, MemoryScope, MemoryType
 from agent_memory.policy import DecisionPolicy, DefaultPolicy
 from agent_memory.retriever import MemoryRetriever
 from agent_memory.sqlite_store import SqliteMemoryStore
 from agent_memory.store import ChromaDBStore, MemoryStore
 from agent_memory.ttl import parse_ttl
+
+log = get_logger(__name__)
 
 
 class Memory:
@@ -24,12 +29,16 @@ class Memory:
         replay_threshold: float = 0.85,
         restore_threshold: float = 0.70,
         verify_threshold: float = 0.80,
-        backend: str = "sqlite",  # "chromadb" or "sqlite"
+        backend: str = "sqlite",  # "chromadb" | "sqlite" | "redis" | "postgres"
         embedder: object | None = None,
         enable_embeddings: bool | str = "auto",
+        store: MemoryStore | None = None,
+        **backend_kwargs: object,
     ) -> None:
-        self.store: MemoryStore
-        if backend == "sqlite":
+        if store is not None:
+            # Accept a pre-built store directly (useful for testing / custom backends)
+            self.store: MemoryStore = store
+        elif backend == "sqlite":
             self.store = SqliteMemoryStore(
                 persist_dir=persist_dir,
                 collection_name=collection_name,
@@ -38,8 +47,20 @@ class Memory:
             )
         elif backend == "chromadb":
             self.store = ChromaDBStore(persist_dir=persist_dir, collection_name=collection_name)
+        elif backend == "redis":
+            from agent_memory.redis_store import RedisMemoryStore
+
+            self.store = RedisMemoryStore(**backend_kwargs)  # type: ignore[arg-type]
+        elif backend == "postgres":
+            from agent_memory.postgres_store import PostgresMemoryStore
+
+            self.store = PostgresMemoryStore(**backend_kwargs)  # type: ignore[arg-type]
         else:
-            raise ValueError(f"Unknown backend: {backend}. Use 'sqlite' or 'chromadb'")
+            raise ConfigurationError(
+                f"Unknown backend: {backend!r}. "
+                "Choices: 'sqlite', 'chromadb', 'redis', 'postgres'"
+            )
+        log.info("Memory initialised  backend=%s", backend)
         self._policy = policy or DefaultPolicy()
         self.retriever = MemoryRetriever(self.store, policy=self._policy)
         self.decision_engine = DecisionEngine(
@@ -79,7 +100,10 @@ class Memory:
             expires_at=parse_ttl(ttl),
         )
         entry.refresh_state()
-        return self.store.store(entry)
+        stored = self.store.store(entry)
+        self.retriever.invalidate_cache()
+        log.debug("remember  id=%s  type=%s", stored.id[:8], stored.type.value)
+        return stored
 
     async def aremember(
         self,
@@ -195,7 +219,11 @@ class Memory:
         return await asyncio.to_thread(self.get, memory_id)
 
     def forget(self, memory_id: str) -> bool:
-        return self.store.delete(memory_id)
+        deleted = self.store.delete(memory_id)
+        if deleted:
+            self.retriever.invalidate_cache()
+            log.debug("forget  id=%s", memory_id[:8])
+        return deleted
 
     async def aforget(self, memory_id: str) -> bool:
         """Async version of forget()."""
@@ -317,9 +345,143 @@ class Memory:
             "Validate this memory with available tools before reusing or regenerating."
         )
 
+    # ------------------------------------------------------------------
+    # Entity extraction — auto-remember from raw conversation text
+    # ------------------------------------------------------------------
+
+    def from_conversation(
+        self,
+        human: str,
+        assistant: str,
+        *,
+        scope: MemoryScope | str = MemoryScope.USER,
+        min_confidence: float = 0.75,
+        extractor: EntityExtractor | None = None,
+    ) -> builtins.list[MemoryEntry]:
+        """Extract and store memories from a single conversation turn.
+
+        Automatically identifies facts, preferences, and entities in
+        *human* + *assistant* text and calls :meth:`remember` for each.
+        Only candidates above *min_confidence* are stored.
+
+        Returns the list of newly stored :class:`~agent_memory.models.MemoryEntry` objects.
+
+        Usage::
+
+            entries = memory.from_conversation(
+                human="My name is Karan and I prefer Python.",
+                assistant="Got it!",
+            )
+        """
+        mem_scope = MemoryScope(scope) if isinstance(scope, str) else scope
+        ext = extractor or EntityExtractor()
+        candidates: builtins.list[ExtractedMemory] = ext.extract_from_turn(
+            human, assistant, scope=mem_scope
+        )
+        stored: builtins.list[MemoryEntry] = []
+        log.debug("from_conversation  candidates=%d  min_conf=%.2f", len(candidates), min_confidence)
+        for c in candidates:
+            if c.confidence < min_confidence:
+                continue
+            entry = self.remember(
+                c.query,
+                c.response,
+                type=c.memory_type,
+                scope=mem_scope,
+                tags=c.tags,
+                confidence=c.confidence,
+                requires_verification=c.requires_verification,
+                metadata=c.metadata,
+            )
+            stored.append(entry)
+        return stored
+
+    async def afrom_conversation(
+        self,
+        human: str,
+        assistant: str,
+        *,
+        scope: MemoryScope | str = MemoryScope.USER,
+        min_confidence: float = 0.75,
+        extractor: EntityExtractor | None = None,
+    ) -> builtins.list[MemoryEntry]:
+        """Async version of :meth:`from_conversation`."""
+        return await asyncio.to_thread(
+            self.from_conversation,
+            human,
+            assistant,
+            scope=scope,
+            min_confidence=min_confidence,
+            extractor=extractor,
+        )
+
+    # ------------------------------------------------------------------
+    # Paged memory — hierarchical context tiers
+    # ------------------------------------------------------------------
+
+    def paged(
+        self,
+        *,
+        context_size: int = 20,
+        recall_top_k: int = 5,
+        scope: MemoryScope | str = MemoryScope.USER,
+    ) -> PagedMemory:
+        """Return a :class:`~agent_memory.paged_memory.PagedMemory` wrapper.
+
+        The wrapper adds an in-context buffer on top of this store so that
+        recent turns are always available without a search, while older
+        entries are automatically paged out to recall / archival tiers.
+
+        Usage::
+
+            paged = memory.paged(context_size=20)
+            paged.add_turn("What is Python?", "A programming language.")
+            ctx = paged.get_context("Tell me about Python")
+            print(ctx.format_for_llm())
+        """
+        from agent_memory.paged_memory import PagedMemory
+
+        mem_scope = MemoryScope(scope) if isinstance(scope, str) else scope
+        return PagedMemory(
+            self,
+            context_size=context_size,
+            recall_top_k=recall_top_k,
+            scope=mem_scope,
+        )
+
+    # ------------------------------------------------------------------
+    # Knowledge graph — typed entities + relations
+    # ------------------------------------------------------------------
+
+    def knowledge_graph(self) -> KnowledgeGraph:
+        """Build and return a :class:`~agent_memory.knowledge_graph.KnowledgeGraph`.
+
+        The graph is built from all active memories in this store, extracting
+        named entities (people, orgs, locations, concepts) and typed
+        relationships between them.
+
+        Usage::
+
+            kg = memory.knowledge_graph()
+            entity = kg.find_entity("Karan")
+            for rel in kg.relations_for(entity.id):
+                print(rel.relation, "→", rel.target)
+        """
+
+        from agent_memory.knowledge_graph import GraphBuilder  # noqa: PLC0415
+
+        return GraphBuilder().build(self.store)
+
+    # ------------------------------------------------------------------
     # Backward compatibility
+    # ------------------------------------------------------------------
+
     def list_memories(self, limit: int = 100, offset: int = 0) -> builtins.list[MemoryEntry]:
         return self.list(limit=limit, offset=offset)
 
 
 MemoryManager = Memory
+
+# Lazy forward references resolved at import time
+from agent_memory.knowledge_graph import KnowledgeGraph  # noqa: E402
+from agent_memory.paged_memory import PagedMemory  # noqa: E402

@@ -1,0 +1,83 @@
+# docker-compose.dev.yml
+#
+# Development infrastructure: Redis + PostgreSQL
+#
+# Start all services:   docker compose -f docker-compose.dev.yml up -d
+# Stop + wipe volumes:  docker compose -f docker-compose.dev.yml down -v
+#
+# After starting, point the SDK at the services via env vars:
+#
+#   AGENT_MEMORY_BACKEND=redis
+#   AGENT_MEMORY_REDIS_URL=redis://localhost:6379/0
+#
+#   AGENT_MEMORY_BACKEND=postgres
+#   AGENT_MEMORY_POSTGRES_DSN=postgresql://agent_memory:agent_memory@localhost:5432/agent_memory
+#
+# See .env.example for the full variable reference.
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Redis – used by the Redis memory backend
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: agent_memory_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory ${REDIS_MAX_MEMORY:-256mb}
+        --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL – used by the Postgres memory backend
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent_memory_postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agent_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_memory}
+      POSTGRES_DB: ${POSTGRES_DB:-agent_memory}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent_memory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # pgvector – Postgres with pgvector extension pre-installed
+  # Swap the postgres service image for this one when you want vector search.
+  # --------------------------------------------------------------------------
+  # pgvector:
+  #   image: pgvector/pgvector:pg16
+  #   container_name: agent_memory_pgvector
+  #   ports:
+  #     - "${POSTGRES_PORT:-5432}:5432"
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER:-agent_memory}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_memory}
+  #     POSTGRES_DB: ${POSTGRES_DB:-agent_memory}
+  #   volumes:
+  #     - pgvector_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
+  # pgvector_data:

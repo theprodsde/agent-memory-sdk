@@ -1,0 +1,40 @@
+name: PR Review Request
+
+# Request a review from the project owner on every pull request.
+# CODEOWNERS handles auto-assignment for repo members; this workflow
+# adds an explicit review request so it also fires for external forks.
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+jobs:
+  request-review:
+    runs-on: ubuntu-latest
+    # Skip draft PRs — request review only when the PR is ready.
+    if: github.event.pull_request.draft == false
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Request review from project owner
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const pr_author = context.payload.pull_request.user.login;
+
+            // Don't request a review from the author themselves
+            if (pr_author === owner) {
+              console.log(`PR opened by ${owner} — skipping self-review request.`);
+              return;
+            }
+
+            await github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              reviewers: [owner],
+            });
+
+            console.log(`Review requested from @${owner} on PR #${context.payload.pull_request.number}`);

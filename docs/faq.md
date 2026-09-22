@@ -1,7 +1,100 @@
 # FAQ
 
-**Why replay instead of restore?** High-confidence exact matches save tokens and improve consistency.
+## Decision actions
 
-**When is verify triggered?** Facts, workflows, tool outputs, or memories flagged `requires_verification=True`.
+**Why REPLAY instead of RESTORE?**
+A high-confidence exact or near-exact match means the stored answer is directly applicable. REPLAY skips the LLM call entirely — zero tokens, zero latency, and consistent output. RESTORE is used when the memory is relevant but may need adaptation.
 
-**How do I debug decisions?** Call `decision.explain()` for score breakdown and reason tags.
+**When is VERIFY triggered?**
+For memories of type `fact`, `workflow`, or `tool_output` when either:
+- Their score falls below `verify_threshold` (default 0.80), or
+- They are older than `recency_half_life_days` (default 30 days), or
+- `requires_verification=True` was set at store time (always VERIFY regardless of score).
+
+**Why does NONE fire even though there's a related memory?**
+The composite score (semantic + recency + confidence + usage) is below the restore threshold. This prevents the "shared-word trap" — a memory about payment methods doesn't answer a question about two-factor authentication just because both mention "support".
+
+**What is the trap score threshold?**
+By default `restore_threshold=0.70`. Below this, the action is NONE. Raise it to be more conservative, lower it to be more permissive.
+
+---
+
+## Memory management
+
+**Nothing is automatically saved — is that intentional?**
+Yes. Auto-saving every turn fills the store with low-quality junk. Your application decides what's worth remembering by calling `remember()` after a validated answer.
+
+**How do I stop a fact from replaying stale data?**
+Set `requires_verification=True` at store time. The entry will always return VERIFY, prompting the agent to re-check the answer before reusing it.
+
+**How do I share memory between multiple processes?**
+Point all processes at the same `persist_dir`. SQLite WAL mode makes concurrent reads safe. The MCP server, CLI, and Python SDK can all share one directory.
+
+**How do I isolate memories between users?**
+Use `scope="user"` when storing and filter by scope when resolving:
+```python
+decision = memory.resolve(query, scope=["user", "global"])
+```
+
+---
+
+## Performance
+
+**How fast is `resolve()`?**
+- Cache hit (repeated query): p50 ≈ 0.05ms
+- Cache miss (new query): p95 ≈ 5.8ms at 100k memories, 7.9ms at 1M memories
+
+**How does it scale?**
+SQLite FTS5 scales sub-linearly — doubling the memory count adds only ~30% latency at large scales because the index prunes irrelevant entries before scoring. See [stress-testing.md](stress-testing.md) for detailed benchmarks.
+
+**When should I use Redis or Postgres instead of SQLite?**
+- **Redis**: multiple services sharing memory with sub-ms read latency requirements
+- **Postgres**: production deployment with existing SQL infrastructure and SQL-native aggregates
+- **SQLite**: the right default for 99% of use cases; handles millions of entries comfortably
+
+---
+
+## Debugging
+
+**How do I see why a decision was made?**
+```python
+print(decision.explain())
+# Outputs:
+#   action: restore  confidence: 0.76
+#   reasons: moderate semantic match, keyword match, recent memory
+#   scores:
+#     semantic_score:  0.74
+#     keyword_score:   0.75
+#     recency_score:   1.00
+#     confidence_score: 1.00
+#     policy_score:    0.76
+```
+
+**How do I enable debug logging?**
+```python
+from agent_memory import configure_debug_logging
+configure_debug_logging()
+```
+This shows every retrieval, cache hit/miss, and decision at DEBUG level from `agent_memory.*` loggers.
+
+**Why are some test queries returning NONE when I expect a match?**
+Check `decision.reasons` — common causes:
+- Low semantic/keyword overlap → the query and memory don't share enough content words
+- Memory is too old → recency score is low, dragging the composite below the threshold
+- Confidence is low → update it with `ConfidenceLearner.record_event(entry, ConfidenceEvent.USER_CONFIRMED)`
+
+---
+
+## Integration
+
+**Can I use it with LangChain / LlamaIndex?**
+Yes. `AgentMemoryLangChain` (drop-in for `BaseMemory`) and `AgentMemoryLlamaIndex` are included. See [examples/README.md](../examples/README.md).
+
+**Does it work with the MCP protocol (Cursor, Claude Code)?**
+Yes. `agent-memory-mcp` exposes 7 MCP tools. See [docs/mcp.md](mcp.md).
+
+**Can multiple agents share one memory store?**
+Yes. `MultiAgentMemory` wraps any `Memory` instance with SHARED / NAMESPACED / ISOLATED isolation modes. See [examples/multi_agent.py](../examples/multi_agent.py).
+
+**What happens if I don't call `remember()` after a good answer?**
+Nothing is stored. The next identical query will return NONE and the agent will answer from scratch again.

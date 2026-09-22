@@ -1,0 +1,32 @@
+{"query": "How do I reset my password?", "response": "Settings → Security → Reset Password. Link expires 30 min.", "type": "conversation", "scope": "global", "tags": ["auth", "password"]}
+{"query": "How do I enable two-factor authentication?", "response": "Settings → Security → 2FA → Enable. Supports TOTP and SMS.", "type": "workflow", "scope": "global", "tags": ["auth", "security", "2fa"]}
+{"query": "What payment methods do you accept?", "response": "Visa, Mastercard, PayPal, and Apple Pay.", "type": "fact", "scope": "global", "tags": ["billing", "payments"]}
+{"query": "What is the subscription price?", "response": "Free tier, Pro $49/month, Enterprise custom.", "type": "fact", "scope": "global", "tags": ["billing", "pricing"], "requires_verification": true}
+{"query": "What are the API rate limits?", "response": "Free: 100 req/min. Pro: 1000 req/min. Enterprise: unlimited.", "type": "fact", "scope": "project", "tags": ["api", "limits"], "requires_verification": true}
+{"query": "How do I authenticate API requests?", "response": "Authorization: Bearer <token> header on every request.", "type": "fact", "scope": "global", "tags": ["api", "auth"]}
+{"query": "How do I invite team members?", "response": "Settings → Team → Invite. Links expire after 7 days.", "type": "workflow", "scope": "team", "tags": ["team", "onboarding"]}
+{"query": "What user roles are available?", "response": "Owner, Admin, Editor, Viewer, Guest.", "type": "fact", "scope": "team", "tags": ["team", "permissions", "roles"]}
+{"query": "Python SDK initialisation", "response": "from example_sdk import Client\nclient = Client(api_key='...')", "type": "code", "scope": "project", "tags": ["sdk", "python", "code"]}
+{"query": "Node.js SDK usage example", "response": "import { Client } from 'example-sdk';\nconst client = new Client({ apiKey: process.env.API_KEY });", "type": "code", "scope": "project", "tags": ["sdk", "nodejs", "code"]}
+{"query": "User interface theme preference", "response": "User prefers dark mode. Always apply dark theme by default.", "type": "preference", "scope": "user", "tags": ["ui", "preference", "dark-mode"]}
+{"query": "User timezone setting", "response": "Timezone is Europe/London (GMT/BST). Always show times in this timezone.", "type": "preference", "scope": "user", "tags": ["locale", "timezone", "preference"]}
+{"query": "What is the enterprise SLA?", "response": "99.99% uptime. P1 response: 15 minutes. P2: 2 hours.", "type": "fact", "scope": "global", "tags": ["sla", "enterprise", "support"], "requires_verification": true}
+{"query": "How do I contact support?", "response": "In-app chat (Pro+), email support@example.com, or open a ticket.", "type": "conversation", "scope": "global", "tags": ["support", "contact"]}
+{"query": "How do I set up Slack integration?", "response": "Settings → Integrations → Slack → Connect. Authorize and select channel.", "type": "workflow", "scope": "workspace", "tags": ["slack", "integration", "notifications"]}
+{"query": "Does the API support webhooks?", "response": "Yes. Settings → Webhooks → Add Endpoint. HMAC-SHA256 signed.", "type": "fact", "scope": "project", "tags": ["webhooks", "api", "developer"]}
+{"query": "How do I export my data?", "response": "Settings → Data → Export. Available as CSV, JSON, or Parquet.", "type": "conversation", "scope": "user", "tags": ["data", "export"]}
+{"query": "What is the data retention policy?", "response": "Active accounts: indefinitely. Deleted: purged after 30 days.", "type": "fact", "scope": "global", "tags": ["data", "retention", "compliance"]}
+{"query": "How do I enable SSO?", "response": "Settings → Security → SSO → Upload IdP metadata. Supports SAML 2.0 and OIDC.", "type": "workflow", "scope": "workspace", "tags": ["auth", "sso", "enterprise"]}
+{"query": "How do I rotate an API key?", "response": "Generate new key, update all services, then revoke old key. Test in staging first.", "type": "workflow", "scope": "project", "tags": ["security", "api", "credentials"]}
+{"query": "What programming language is the backend?", "response": "Python 3.11 with FastAPI and SQLAlchemy.", "type": "fact", "scope": "project", "tags": ["engineering", "stack", "python"]}
+{"query": "How do we deploy to production?", "response": "Merge to main, tag a release, CI deploys automatically via GitHub Actions.", "type": "workflow", "scope": "project", "tags": ["deploy", "ci", "engineering"]}
+{"query": "Where is the analytics database?", "response": "ClickHouse for analytics queries, PostgreSQL for transactional data.", "type": "fact", "scope": "project", "tags": ["infrastructure", "database", "analytics"]}
+{"query": "What message queue do we use?", "response": "RabbitMQ exchange 'support-inbound', fanout to 3 worker queues.", "type": "fact", "scope": "project", "tags": ["infrastructure", "queue", "support"]}
+{"query": "What is the refund policy?", "response": "Full refunds within 30 days of purchase. Contact support with order ID.", "type": "fact", "scope": "global", "tags": ["billing", "refund", "support"], "requires_verification": true}
+{"query": "Is there a free trial?", "response": "14-day free trial on all paid plans. No credit card required.", "type": "fact", "scope": "global", "tags": ["billing", "trial", "pricing"]}
+{"query": "What storage limits apply?", "response": "Free: 1 GB. Pro: 50 GB. Business: 500 GB. Enterprise: custom.", "type": "fact", "scope": "global", "tags": ["storage", "limits", "pricing"]}
+{"query": "How do I set up audit logging?", "response": "Settings → Security → Audit Log. Business and Enterprise plans only.", "type": "fact", "scope": "workspace", "tags": ["audit", "security", "compliance"]}
+{"query": "Which integrations are available?", "response": "Slack, Jira, GitHub, GitLab, Zapier, Salesforce, HubSpot, AWS, GCP, Azure.", "type": "fact", "scope": "global", "tags": ["integrations", "third-party"]}
+{"query": "User prefers concise responses", "response": "Keep answers under 3 sentences where possible.", "type": "preference", "scope": "user", "tags": ["preference", "communication"]}
+{"query": "How do I cancel my subscription?", "response": "Account → Billing → Cancel Plan. Access continues until period ends.", "type": "conversation", "scope": "user", "tags": ["billing", "subscription", "cancel"]}
+{"query": "How do I upgrade to Pro?", "response": "Account → Billing → Change Plan → Pro. Prorated credit applied.", "type": "workflow", "scope": "user", "tags": ["billing", "upgrade", "pro"]}
