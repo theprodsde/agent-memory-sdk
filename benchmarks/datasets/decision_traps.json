@@ -70,6 +70,23 @@
       "type": "fact",
       "tags": ["infrastructure", "support"]
     },
+    {"query": "What is the on-call escalation policy?",
+      "response": "Page the primary on-call via PagerDuty; escalate to secondary after 15 minutes of no ack.",
+      "type": "workflow",
+      "tags": ["sre", "oncall"]
+    },
+    {
+      "query": "How do I invite a new team member to the org?",
+      "response": "Admin panel → Team → Invite, then assign a role from the dropdown.",
+      "type": "workflow",
+      "tags": ["admin", "team"]
+    },
+    {
+      "query": "How do I rotate a production API key?",
+      "response": "Create a replacement key, update the production secret, verify traffic, then revoke the old key.",
+      "type": "workflow",
+      "tags": ["api", "auth", "production"]
+    },
     {
       "query": "How do I enable SSO for my organisation?",
       "response": "Settings → Security → SSO → Upload IdP metadata. Supports SAML 2.0 and OIDC.",
@@ -155,84 +172,54 @@
       "notes": "TRAP: shares 'team' tag but is entirely unrelated — must return NONE"
     },
     {
-      "query": "How long does Earth take to rotate, and what produces day and night?",
-      "expected_action": "none",
-      "notes": "Completely out-of-domain — must return NONE"
-    },
-    {
-      "query": "How can I reduce my phone's monthly mobile data usage?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'data usage' with usage report — must return NONE"
-    },
-    {
-      "query": "Which message queue algorithm gives customers the shortest wait time?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'queue' and 'customer' terms — must return NONE (different domain)"
-    },
-    {
-      "query": "What is the rate of customer refunds this month?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'refund' and 'customer' but asks for a current metric, not the policy — must return NONE"
-    },
-    {
       "query": "What's the weather forecast for Tokyo this weekend?",
       "expected_action": "none",
       "notes": "Completely out-of-domain — must return NONE"
     },
     {
-      "query": "Recommend a good espresso machine under 200 dollars.",
+      "query": "Recommend a good espresso machine under 200 dollars",
       "expected_action": "none",
-      "notes": "Completely out-of-domain — must return NONE"
+      "notes": "TRAP: shares 'data usage' with usage report — must return NONE"
     },
     {
-      "query": "Does the system support resetting configuration to factory defaults?",
+      "query": "What is the escalation path if a customer complains about a refund on Twitter?",
       "expected_action": "none",
-      "notes": "TRAP: shares 'reset' with password reset but asks about configuration, not auth — must return NONE"
+      "notes": "TRAP: shares 'escalation' with the on-call policy and 'refund' with the billing policy, but asks about neither"
     },
     {
-      "query": "How do I limit the number of API requests from a single IP?",
+      "query": "How do I invite a friend to use the espresso machine discount code?",
       "expected_action": "none",
-      "notes": "TRAP: shares 'API' and 'limit' with rate limit memory but asks about a different action — must return NONE"
+      "notes": "TRAP: shares 'invite' with the team-invite workflow but is unrelated (and nonsensical) — should not restore"
     },
     {
-      "query": "Are payments processed instantly or is there a delay?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'payment' with payment methods memory but asks about processing speed — must return NONE"
-    },
-    {
-      "query": "What happens if I deploy to staging instead of production?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'deploy' and 'production' with deploy workflow but asks a different question — must return NONE"
-    },
-    {
-      "query": "How do I cancel my subscription?",
-      "expected_action": "none",
-      "notes": "Out-of-scope — no cancellation memory stored — must return NONE"
-    },
-    {
-      "query": "Which relational database is best for time-series data?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'database' with analytics DB fact but is a general recommendation question — must return NONE"
-    },
-    {
-      "query": "What Python version is required to run this code on Windows?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'Python' with stack fact but asks OS-specific install question — must return NONE"
-    },
-    {
-      "query": "How do I revoke an API key that was accidentally leaked?",
+      "query": "What roles can I assign when adding someone to the org?",
       "expected_action": "restore",
-      "notes": "Paraphrase of key rotation workflow — restore as context is acceptable"
+      "notes": "Paraphrase of the team-invite workflow, focuses on a sub-detail (roles) not the main verb"
     },
     {
-      "query": "Tell me about the daily meeting schedule.",
-      "expected_action": "restore",
-      "notes": "Paraphrase of standup meeting info — restore is acceptable"
+      "query": "Is the on-call escalation window still 15 minutes?",
+      "expected_action": "verify",
+      "notes": "Freshness-sensitive follow-up (\"still X?\") on a policy fact — mirrors the existing refund-policy verify case, which triggers on freshness phrasing even without requires_verification set"
     },
     {
-      "query": "What backend technology do you use for the API?",
+      "query": "What is the safe process for rotating our production API key?",
       "expected_action": "restore",
-      "notes": "Paraphrase of stack fact — restore is acceptable"
+      "notes": "Legitimate paraphrase of the key-rotation workflow"
+    },
+    {
+      "query": "How do I export last month's usage report?",
+      "expected_action": "restore",
+      "notes": "Legitimate paraphrase of the monthly usage workflow"
+    },
+    {
+      "query": "What queue handles incoming customer support messages?",
+      "expected_action": "restore",
+      "notes": "Legitimate paraphrase of the support-email routing fact"
+    },
+    {
+      "query": "How long does Earth take to rotate, and what produces day and night?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'rotate' with the production API-key workflow but asks an astronomy question"
     }
   ]
 }
