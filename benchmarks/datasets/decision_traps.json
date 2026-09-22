@@ -62,6 +62,24 @@
       "response": "Freeze non-critical deploys when budget burn exceeds 2x for the month.",
       "type": "fact",
       "tags": ["sre", "policy"]
+    },
+    {
+      "query": "How do I rotate a production API key?",
+      "response": "Create a replacement key, update the production secret, verify traffic, then revoke the old key.",
+      "type": "workflow",
+      "tags": ["api", "auth", "production"]
+    },
+    {
+      "query": "Where can I download the monthly usage report?",
+      "response": "Open Billing → Usage, select the month, and choose Export CSV.",
+      "type": "workflow",
+      "tags": ["billing", "reporting"]
+    },
+    {
+      "query": "Which queue processes customer support emails?",
+      "response": "The support-inbound queue routes new messages to the triage worker.",
+      "type": "fact",
+      "tags": ["support", "infra"]
     }
   ],
   "cases": [
@@ -111,6 +129,21 @@
       "notes": "Freshness-sensitive fact"
     },
     {
+      "query": "What is the safe process for rotating our production API key?",
+      "expected_action": "restore",
+      "notes": "Legitimate paraphrase of the key-rotation workflow"
+    },
+    {
+      "query": "How do I export last month's usage report?",
+      "expected_action": "restore",
+      "notes": "Legitimate paraphrase of the monthly usage workflow"
+    },
+    {
+      "query": "What queue handles incoming customer support messages?",
+      "expected_action": "restore",
+      "notes": "Legitimate paraphrase of the support-email routing fact"
+    },
+    {
       "query": "Does the platform support two-factor authentication for admin accounts?",
       "expected_action": "none",
       "notes": "TRAP: shares only 'support' with the payment-methods memory; naive retrieval replays the wrong answer"
@@ -119,6 +152,26 @@
       "query": "What key ingredients go into the team offsite planning?",
       "expected_action": "none",
       "notes": "TRAP: shares only 'key'/'team' with API-key and standup memories"
+    },
+    {
+      "query": "How long does Earth take to rotate, and what produces day and night?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'rotate' with the production API-key workflow but asks an astronomy question"
+    },
+    {
+      "query": "How can I reduce my phone's monthly mobile data usage?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'monthly'/'usage' with the billing report workflow but asks about a personal device"
+    },
+    {
+      "query": "Which message queue algorithm gives customers the shortest wait time?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'queue'/'customer' with support-email routing but asks about queueing algorithms"
+    },
+    {
+      "query": "What is the rate of customer refunds this month?",
+      "expected_action": "none",
+      "notes": "TRAP: combines terms from rate-limit and refund-policy memories but asks for an analytics metric"
     },
     {
       "query": "What's the weather forecast for Tokyo this weekend?",
