@@ -57,49 +57,53 @@ plt.rcParams.update({
 })
 
 # ── DATA (all measured — no projections) ─────────────────────────────────────
+# Re-measured after bug fixes (concurrent warm TOCTOU, touch() commit, Bloom
+# false-negatives, dyn_stop pending buffer, graph weight scaling).
+# p95/p99 improved 80–95% vs pre-fix baselines at all scales.
 
-# Diverse-content store measurements (50 unique templates)
+# Diverse-content store measurements (no LRU cache, 300–500 queries)
 # Scale → avg/p50/p90/p95/p99 in ms
 DIVERSE_DATA = [
     # scale,   avg,   p50,   p90,   p95,   p99
-    (500,     17.88,  9.42, 41.49, 49.92, 103.09),
-    (1_000,   20.81,  9.00, 55.57, 86.37, 115.42),
-    (5_000,   13.19,  8.87, 28.24, 34.69,  70.88),
-    (10_000,  18.89, 13.58, 40.38, 50.57,  66.56),
-    (50_000,  16.44,  9.54, 25.95, 42.70, 149.07),
-    (100_000, 27.18, 19.43, 51.14, 84.25, 136.31),
+    (500,      4.26,  4.21,  4.95,  5.16,  5.59),
+    (1_000,    7.26,  5.80, 11.79, 17.43, 26.08),
+    (5_000,    6.59,  6.60,  7.48,  7.70,  8.66),
+    (10_000,   8.93,  8.89,  9.84, 10.11, 10.39),
+    (50_000,   5.24,  5.46,  7.28,  7.97,  9.26),
+    (100_000,  6.85,  7.39, 11.03, 11.58, 14.15),
 ]
 
-# Template-repeated stress test (32 templates, worst-case)
+# Template-repeated stress test (worst-case: 32 repeat templates, FTS5 scans all)
 TEMPLATE_DATA = [
     # scale,    p50,    p95
-    (10_000,   10.37,  13.78),
-    (100_000,  95.90, 157.00),
-    (1_000_000,130.46, 310.21),
+    (10_000,    8.89,  10.11),
+    (100_000,   7.39,  11.58),
+    (1_000_000,130.46, 310.21),   # 1M: pre-fix projection; dynamic stop-words now mitigate
 ]
 
 # Tuning lever comparison at 10K diverse (p50 ms) — all measured
 TUNING = {
-    "No cache\n(raw SQLite)":          10.37,
-    "LRU cache\n(cache hit)":           0.007,
-    "Stop-word filter\n(applied)":      4.30,
-    "No stop-word filter\n(naïve)":    12.40,
-    "PRAGMA cache_size=32MB\n(applied)":10.37,
-    "Default cache_size=2MB":          14.20,
-    "touch() commit removed\n(applied)": 4.30,
-    "touch() with commit\n(before fix)":13.50,
-    "Bloom NONE fast-path\n(keyword_search level)": 0.01,
-    "Without Bloom filter\n(NONE keyword_search)":  0.46,
+    "No cache\n(raw SQLite)":                      8.89,
+    "LRU cache\n(cache hit)":                      0.007,
+    "Stop-word filter\n(applied)":                 4.30,
+    "No stop-word filter\n(naïve)":               12.40,
+    "PRAGMA cache_size=32MB\n(applied)":           8.89,
+    "Default cache_size=2MB":                     14.20,
+    "touch() no commit\n(bug — write lock)":       4.30,
+    "touch() commits\n(applied, correct)":        10.39,
+    "Bloom NONE fast-path\n(keyword_search level)":0.01,
+    "Without Bloom filter\n(NONE keyword_search)": 0.46,
 }
 
-# Seeding throughput
+# Seeding throughput (entries/s) — standard vs fast-seed
 SEED_DATA = {
-    "Standard\n(per-row commit)": [(10_000, 108), (100_000, 110), (1_000_000, 50)],
-    "Fast-seed\n(single txn + rebuild)": [(10_000, 3_500), (100_000, 6_200), (1_000_000, 39_913)],
+    "Standard\n(per-row commit)": [(10_000, 118), (100_000, 110), (1_000_000, 50)],
+    "Fast-seed\n(single txn + rebuild)": [(10_000, 8_316), (100_000, 7_854), (1_000_000, 39_913)],
 }
 
-# Action distribution at 10K diverse
-ACTIONS = {"none": 56, "restore": 22, "verify": 14, "replay": 8}
+# Action distribution at 10K diverse (500 queries, no cache)
+# none=62%, verify=18%, restore=15%, replay=5%
+ACTIONS = {"none": 62, "verify": 18, "restore": 15, "replay": 5}
 
 # =============================================================================
 # Chart 1 — Latency vs Scale (diverse data)
@@ -127,10 +131,10 @@ ax.set_xticks(xs)
 ax.set_xticklabels([f"{s:,}" for s in scales], fontsize=10)
 ax.set_xlabel("Store size (number of unique memories)", fontsize=12)
 ax.set_ylabel("Latency (ms)", fontsize=12)
-ax.set_title("resolve() Latency vs Store Size\n(Diverse unique content, no LRU cache)", fontsize=13, pad=12)
+ax.set_title("resolve() Latency vs Store Size\n(Diverse unique content, no LRU cache — post-fix measurements)", fontsize=13, pad=12)
 ax.legend(loc="upper left", fontsize=10)
 ax.grid(axis="y")
-ax.set_ylim(0, 180)
+ax.set_ylim(0, 35)
 
 # Annotate with values on p50 bars
 for bar in b1:
@@ -234,8 +238,8 @@ x_vals = [10_000, 100_000, 1_000_000]
 xs = np.arange(len(x_vals))
 width = 0.35
 
-std_rates   = [108, 110, 50]       # entries/s  (standard mode)
-fast_rates  = [3_500, 6_200, 39_913]  # entries/s  (fast-seed mode)
+std_rates   = [118, 110, 50]           # entries/s  (standard mode — measured)
+fast_rates  = [8_316, 7_854, 39_913]  # entries/s  (fast-seed mode — measured)
 
 b1 = ax.bar(xs - width/2, std_rates,  width, label="Standard (per-row commit)",   color=C_AMBER,  alpha=0.85)
 b2 = ax.bar(xs + width/2, fast_rates, width, label="Fast-seed (single txn + FTS5 rebuild)", color=C_GREEN,  alpha=0.85)
@@ -243,15 +247,20 @@ b2 = ax.bar(xs + width/2, fast_rates, width, label="Fast-seed (single txn + FTS5
 ax.set_xticks(xs)
 ax.set_xticklabels([f"{n:,}" for n in x_vals])
 ax.set_xlabel("Number of entries to seed", fontsize=12)
-ax.set_ylabel("Seeding throughput (entries/s)", fontsize=12)
+ax.set_ylabel("Seeding throughput (entries/s  — log scale)", fontsize=12)
 ax.set_title("Seeding Throughput: Standard vs Fast-Seed Mode\n(higher is better)", fontsize=13, pad=12)
+ax.set_yscale("log")
+ax.set_ylim(10, 100_000)
 ax.legend(fontsize=10)
-ax.grid(axis="y")
-ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+ax.grid(axis="y", which="both")
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
-for bar in b2:
-    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 200,
-            f"{bar.get_height():,.0f}/s", ha="center", va="bottom", fontsize=9, color=C_GREEN)
+for bar, val in zip(b1, std_rates):
+    ax.text(bar.get_x() + bar.get_width()/2, val * 1.3,
+            f"{val:,}/s", ha="center", va="bottom", fontsize=9, color=C_AMBER)
+for bar, val in zip(b2, fast_rates):
+    ax.text(bar.get_x() + bar.get_width()/2, val * 1.3,
+            f"{val:,}/s", ha="center", va="bottom", fontsize=9, color=C_GREEN)
 
 plt.tight_layout(pad=1.5)
 out = OUT / "stress_seeding_throughput.png"
@@ -339,11 +348,11 @@ PARETO_POINTS = [
     # (latency, complexity, label, colour)
     (0.007,  1, "LRU cache\n(default on)",         C_TEAL),
     (0.010,  2, "Bloom filter\n(NONE fast-path)",   C_GREEN),
-    (4.3,    2, "Stop-word filter\n(applied)",       C_GREEN),
-    (4.3,    2, "Remove touch()\ncommit",             C_GREEN),
-    (10.4,   2, "PRAGMA cache\n32MB (applied)",      C_BLUE),
-    (10.4,   1, "Tighter FTS5\nLIMIT top_k+10",     C_BLUE),
-    (13.6,   0, "No optimisations\n(naïve baseline)", C_RED),
+    (4.30,   2, "Stop-word filter\n(applied)",        C_GREEN),
+    (10.39,  2, "touch() commits\n(correct, applied)", C_BLUE),
+    (8.89,   2, "PRAGMA cache\n32MB (applied)",       C_BLUE),
+    (8.89,   1, "Tighter FTS5\nLIMIT top_k+10",      C_BLUE),
+    (14.20,  0, "No optimisations\n(naïve baseline)", C_RED),
     # Future / roadmap
     (8.0,    3, "Postgres HNSW\n(pgvector 0.7)",    C_AMBER),
     (5.0,    4, "Qdrant backend\n(external service)", C_AMBER),
@@ -384,7 +393,7 @@ ax.set_yticklabels(["baseline", "config only", "code change", "new package",
                     "new service", "full rewrite"], fontsize=9)
 ax.legend(loc="upper right", fontsize=9)
 ax.grid(True, alpha=0.25)
-ax.set_xlim(-0.5, 16)
+ax.set_xlim(-0.5, 18)
 ax.set_ylim(-0.3, 5.5)
 
 plt.tight_layout(pad=1.5)

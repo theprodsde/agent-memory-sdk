@@ -37,7 +37,7 @@ class DecisionPolicy(ABC):
 class DefaultPolicy(DecisionPolicy):
     """
     Default policy combining:
-      semantic score + recency + confidence + usage
+      semantic score + recency + confidence + usage + optional graph importance
     """
 
     def __init__(
@@ -48,6 +48,7 @@ class DefaultPolicy(DecisionPolicy):
         usage_weight: float = 0.10,
         recency_half_life_days: float = 30.0,
         usage_cap: int = 20,
+        graph_weight: float = 0.0,
     ) -> None:
         self.semantic_weight = semantic_weight
         self.recency_weight = recency_weight
@@ -55,6 +56,18 @@ class DefaultPolicy(DecisionPolicy):
         self.usage_weight = usage_weight
         self.recency_half_life_days = recency_half_life_days
         self.usage_cap = usage_cap
+        self.graph_weight = graph_weight
+        # Populated by Memory.refresh_graph_scores(); maps memory_id → normalized [0,1] score.
+        self._graph_scores: dict[str, float] = {}
+
+    def update_graph_scores(self, scores: dict[str, float]) -> None:
+        """Replace the cached graph importance scores (normalized [0,1]).
+
+        Call Memory.refresh_graph_scores() to build and inject these
+        automatically.  Setting graph_weight=0 (the default) means this dict
+        has no effect on scoring even when populated.
+        """
+        self._graph_scores = dict(scores)
 
     def score(
         self,
@@ -90,18 +103,34 @@ class DefaultPolicy(DecisionPolicy):
         recency = self._recency_score(entry.updated_at, now=now)
         usage = min(entry.access_count, self.usage_cap) / self.usage_cap
         confidence = entry.confidence
-        policy_score = (
-            self.semantic_weight * hybrid_semantic
-            + self.recency_weight * recency
-            + self.confidence_weight * confidence
-            + self.usage_weight * usage
-        )
+        # Graph importance (normalized [0,1] PageRank).  When graph_weight > 0
+        # the base weights are scaled by (1 - graph_weight) so the total score
+        # remains in [0, 1] and the graph component has genuine discriminating
+        # power rather than being swallowed by the min(1.0) clamp.
+        graph_score = self._graph_scores.get(entry.id, 0.0) if self._graph_scores else 0.0
+        if self.graph_weight > 0:
+            base_scale = 1.0 - self.graph_weight
+            policy_score = (
+                base_scale * self.semantic_weight * hybrid_semantic
+                + base_scale * self.recency_weight * recency
+                + base_scale * self.confidence_weight * confidence
+                + base_scale * self.usage_weight * usage
+                + self.graph_weight * graph_score
+            )
+        else:
+            policy_score = (
+                self.semantic_weight * hybrid_semantic
+                + self.recency_weight * recency
+                + self.confidence_weight * confidence
+                + self.usage_weight * usage
+            )
         return {
             "semantic_score": hybrid_semantic,
             "keyword_score": keyword,
             "recency_score": recency,
             "confidence_score": confidence,
             "usage_score": usage,
+            "graph_score": graph_score,
             "policy_score": policy_score,
             "final_score": policy_score,
         }
