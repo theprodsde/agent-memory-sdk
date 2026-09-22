@@ -491,6 +491,27 @@ class MemoryDecision:
 
 ---
 
+## 🔗 Integrations
+
+`agent-memory-sdk` is the core — every integration delegates to `Memory`.
+All examples live in [`examples/`](examples/) with full setup instructions.
+
+| Integration | Install | Example |
+|-------------|---------|---------|
+| **Core SDK** (SQLite) | `pip install agent-memory-sdk` | [basic_usage.py](examples/basic_usage.py) |
+| **LangChain** `BaseMemory` | `[langchain]` | [langchain_integration.py](examples/langchain_integration.py) |
+| **LlamaIndex** `BaseMemory` | `[llamaindex]` | [llamaindex_integration.py](examples/llamaindex_integration.py) |
+| **Redis** backend | `[redis]` | [redis_backend.py](examples/redis_backend.py) |
+| **PostgreSQL** backend | `[postgres]` | [postgres_backend.py](examples/postgres_backend.py) |
+| **Multi-agent** isolation | *(none)* | [multi_agent.py](examples/multi_agent.py) |
+| **FastAPI** REST server | `[api]` | [rest_api.py](examples/rest_api.py) |
+| **Confidence + Graph** | *(none)* | [confidence_and_graph.py](examples/confidence_and_graph.py) |
+| **Benchmark harness** | *(none)* | [benchmark_harness.py](examples/benchmark_harness.py) |
+
+→ **[examples/README.md](examples/README.md)** — setup instructions, mini code snippets, and descriptions for every example.
+
+---
+
 ## 🔌 MCP Server Integration
 
 Expose Agent Memory as MCP tools for Cursor, VS Code, and other MCP-compatible agents.
@@ -606,151 +627,25 @@ agent-memory eval --datasets ./benchmarks/datasets
 
 ---
 
-## 🚢 Release Process
+## 🚢 Release
 
-### How Releases Work
-
-The project uses **automated CI/CD** via GitHub Actions. Releases are triggered by **pushing a version tag**:
+Releases are **fully automated by CI** — push a version tag, all tests pass, PyPI and GitHub Release are created automatically.
 
 ```bash
-# Create and push a version tag (triggers full release pipeline)
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.3.0 && git push origin v0.3.0
+# CI runs: test matrix (3.10–3.13) → extras test → build → PyPI → GitHub Release
 ```
 
-### What Happens on Tag Push
+→ Full process, versioning guide, and rollback: **[docs/release.md](docs/release.md)**
 
-When you push a tag matching `v*` (e.g., `v0.1.3`, `v1.0.0`, `v2.0.0-beta.1`):
 
-| Step | Description |
-|------|-------------|
-| 1️⃣ **Test** | Runs tests on Python 3.10, 3.11, 3.12, 3.13 |
-| 2️⃣ **Benchmark** | Runs performance benchmarks |
-| 3️⃣ **Docker** | Builds and tests multi-stage Docker image |
-| 4️⃣ **Publish** | Builds package → Publishes to PyPI → Creates GitHub Release |
+## 📈 Status & Roadmap
 
-### Release Artifacts Created
+All planned features through v0.5.0 are **shipped**.
+Track what's next on the **[GitHub Project board →](https://github.com/users/theprodsde/projects/2)**
 
-| Artifact | Location |
-|----------|----------|
-| **PyPI Package** | `pip install agent-memory-sdk==0.1.3` |
-| **GitHub Release** | https://github.com/theprodsde/agent-memory-sdk/releases/tag/v0.1.3 |
-| **Docker Image** | `ghcr.io/theprodsde/agent-memory-sdk:v0.1.3` (if configured) |
-| **Source Archives** | Auto-attached to GitHub Release |
+→ Full feature list and upcoming work: **[docs/roadmap.md](docs/roadmap.md)**
 
-### Version Format
-
-Use **Semantic Versioning** with optional pre-release suffixes:
-- `v1.0.0` - Stable release
-- `v1.0.1` - Patch release
-- `v1.1.0` - Minor release
-- `v2.0.0` - Major release
-- `v1.0.0-alpha.1` - Alpha pre-release
-- `v1.0.0-beta.2` - Beta pre-release
-- `v1.0.0-rc.1` - Release candidate
-
-### Prerequisites
-
-1. **PyPI Token** - Stored as `PYPI_API_TOKEN` in GitHub repository secrets
-2. **GitHub Token** - Automatically provided as `GITHUB_TOKEN`
-3. **Branch Protection** - Recommended: require PR reviews before merging to main
-
-### Manual Release (if needed)
-
-```bash
-# 1. Ensure you're on main with latest changes
-git checkout main
-git pull origin main
-
-# 2. Create version tag
-git tag v0.1.3
-
-# 3. Push tag (triggers CI/CD)
-git push origin v0.1.3
-
-# 4. Monitor workflow
-# https://github.com/theprodsde/agent-memory-sdk/actions
-```
-
-### Rollback / Delete Release
-
-```bash
-# Delete local tag
-git tag -d v0.1.3
-
-# Delete remote tag (also deletes GitHub Release)
-git push origin --delete v0.1.3
-
-# Note: PyPI packages CANNOT be deleted, only yanked
-# twine yank agent-memory 0.1.3
-```
-
----
-
-## 📈 Current Status (v0.3.0-dev)
-
-### ✅ Implemented
-
-**Core**
-- Decision engine (replay / restore / verify / none) with adversarial eval suite — 25/25 (100%)
-- `decision.explain()` full score breakdown and observability
-- Hybrid retrieval: BM25 FTS5 + coverage scaling + RRF fusion (~12ms at 5k memories)
-- Optional vector search via sqlite-vec + fastembed ONNX (`[semantic]` extra)
-- TTL, memory states, consolidation (near-duplicate merging)
-- SQL-aggregate `stats()` / `cleanup()` with no row caps
-- WAL mode + busy timeout for concurrent MCP / CLI / app access
-- Async API (`aremember`, `aresolve`, `alist`, …)
-
-**Backends**
-- SQLite (default) — FTS5 + optional sqlite-vec
-- ChromaDB — vector embeddings + BM25
-- **Redis** — JSON entries, sorted-set index, BM25 (`[redis]` extra)
-- **PostgreSQL** — tsvector FTS + optional pgvector KNN (`[postgres]` extra)
-- `docker-compose.dev.yml` — one-command Redis + Postgres dev environment
-
-**Interfaces**
-- CLI: `remember`, `resolve`, `stats`, `benchmark`, `eval`
-- MCP server (mcp 1.x and 2.x) — `agent-memory-mcp` / `uvx agent-memory-sdk`
-- **FastAPI REST server** — 9 endpoints + HTML status page (`[api]` extra, `agent-memory-api`)
-- **Streamlit dashboard** — stats, memory browser, resolve sandbox (`[dashboard]` extra, `agent-memory-dashboard`)
-
-**Framework adapters**
-- **LangChain** `BaseMemory` adapter — `save_context` / `load_memory_variables` (`[langchain]` extra)
-- **LlamaIndex** `BaseMemory` adapter — `put` / `get` / `get_all` with token-budget trimming (`[llamaindex]` extra)
-
-**Advanced features**
-- **Memory graph** — similarity + tag-overlap edges, BFS paths, clusters, PageRank importance scores
-- **Confidence learning** — event-driven deltas (accessed / verified / rejected) + half-life temporal decay
-- **Multi-agent support** — SHARED / NAMESPACED / ISOLATED modes, broadcast, transfer ownership
-- **LongMemEval / LoCoMo benchmark harness** — Recall@k, MRR, content-recall, action-accuracy, latency
-
-**Quality**
-- CI: lint (ruff) + enforced mypy + 196 tests on Python 3.10–3.13 + semantic-path + Redis + API jobs
-- Release pipeline gates on full test matrix before PyPI publish; pre-release tags auto-flagged
-- Branch protection: all CI checks required, 1 PR review, conversation resolution
-
-### 🚧 Roadmap
-
-| Feature | Status |
-|---------|--------|
-| Async API | ✅ Shipped |
-| SQLite backend (FTS5 + sqlite-vec) | ✅ Shipped |
-| LongMemEval / LoCoMo benchmark harness | ✅ Shipped |
-| LangChain / LlamaIndex adapters | ✅ Shipped |
-| Redis backend | ✅ Shipped |
-| Postgres backend | ✅ Shipped |
-| FastAPI server + REST API | ✅ Shipped |
-| Streamlit dashboard | ✅ Shipped |
-| Memory graph | ✅ Shipped |
-| Confidence learning | ✅ Shipped |
-| Multi-agent support | ✅ Shipped |
-| pgvector KNN on Postgres | 🔜 Next |
-| Redis VSS (vector search) | 🔜 Next |
-| Dashboard graph explorer tab | 🔜 Next |
-
-Have an opinion on priorities? Open a [Discussion](https://github.com/TheProdSDE/agent-memory-sdk/discussions).
-
----
 
 ## 🛡️ Tech Stack
 
@@ -772,13 +667,16 @@ Have an opinion on priorities? Open a [Discussion](https://github.com/TheProdSDE
 
 ## 📚 Documentation
 
-- **[Getting Started](docs/getting-started.md)** - Installation and basic usage
-- **[Architecture](docs/architecture.md)** - Deep dive into the system design
-- **[Memory Model](docs/memory-model.md)** - Understanding memory types and states
-- **[Policies](docs/policies.md)** - Customizing scoring and decision logic
-- **[Benchmarks](docs/benchmarks.md)** - Measured results and reproduce commands
-- **[Why a Decision Layer?](docs/why-decision-layer.md)** - The failure mode this project exists to fix
-- **[FAQ](docs/faq.md)** - Common questions and troubleshooting
+- **[Getting Started](docs/getting-started.md)** — Installation and basic usage
+- **[Architecture](docs/architecture.md)** — Deep dive into the system design
+- **[Memory Model](docs/memory-model.md)** — Memory types, scopes, and states
+- **[Policies](docs/policies.md)** — Customising scoring and decision logic
+- **[Benchmarks](docs/benchmarks.md)** — Measured results and reproduce commands
+- **[Roadmap](docs/roadmap.md)** — Shipped features and what's next
+- **[Release Process](docs/release.md)** — How to cut a release (CI-automated)
+- **[Examples](examples/README.md)** — Runnable samples for every integration
+- **[Why a Decision Layer?](docs/why-decision-layer.md)** — The failure mode this project exists to fix
+- **[FAQ](docs/faq.md)** — Common questions and troubleshooting
 
 ---
 
