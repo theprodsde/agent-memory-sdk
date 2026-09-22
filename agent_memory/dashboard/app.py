@@ -7,6 +7,7 @@ Launch:
 from __future__ import annotations
 
 import os
+from typing import Any
 
 try:
     import streamlit as st
@@ -91,7 +92,7 @@ total_access: int = _stats.get("total_access_count", 0)
 # ── KPI strip — custom HTML tiles (st.metric label visibility is broken in newer
 # Streamlit versions that set visibility:hidden via the visibility="0" attribute
 # with higher-specificity stylesheet rules that !important cannot override reliably)
-def _kpi(col, label: str, value: int) -> None:
+def _kpi(col: Any, label: str, value: int) -> None:
     col.markdown(
         f"""<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
         padding:12px 16px;margin-bottom:4px">

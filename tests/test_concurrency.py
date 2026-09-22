@@ -7,15 +7,11 @@ multiple threads to guard against regressions.
 from __future__ import annotations
 
 import threading
-import tempfile
 from pathlib import Path
 
-import pytest
-
-from agent_memory.models import MemoryEntry, MemoryType, MemoryScope
-from agent_memory.sqlite_store import SqliteMemoryStore
 from agent_memory import Memory
-
+from agent_memory.models import MemoryEntry, MemoryScope, MemoryType
+from agent_memory.sqlite_store import SqliteMemoryStore
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -275,7 +271,7 @@ def test_verify_noop_on_non_verify_decision(tmp_path):
     """verify() is a no-op when called on a non-VERIFY decision."""
     memory = Memory(persist_dir=tmp_path)
     memory.remember("hello", "world")
-    decision = memory.resolve("hello")
+    memory.resolve("hello")  # warm the store; result not used
     # Force a NONE decision by using a query with no match
     from agent_memory.models import MemoryAction, MemoryDecision
     none_decision = MemoryDecision(
@@ -299,7 +295,6 @@ def test_refresh_graph_scores_returns_count(tmp_path):
 
 def test_graph_weight_affects_score(tmp_path):
     """A highly connected memory should score higher with graph_weight > 0."""
-    import tempfile
 
     # Build store without graph
     memory_no_graph = Memory(persist_dir=tmp_path / "no_graph", graph_weight=0.0)
