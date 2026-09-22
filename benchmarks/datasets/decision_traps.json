@@ -64,6 +64,18 @@
       "tags": ["sre", "policy"]
     },
     {
+      "query": "What is the on-call escalation policy?",
+      "response": "Page the primary on-call via PagerDuty; escalate to secondary after 15 minutes of no ack.",
+      "type": "workflow",
+      "tags": ["sre", "oncall"]
+    },
+    {
+      "query": "How do I invite a new team member to the org?",
+      "response": "Admin panel → Team → Invite, then assign a role from the dropdown.",
+      "type": "workflow",
+      "tags": ["admin", "team"]
+    },
+    {
       "query": "How do I rotate a production API key?",
       "response": "Create a replacement key, update the production secret, verify traffic, then revoke the old key.",
       "type": "workflow",
@@ -129,6 +141,46 @@
       "notes": "Freshness-sensitive fact"
     },
     {
+      "query": "Does the platform support two-factor authentication for admin accounts?",
+      "expected_action": "none",
+      "notes": "TRAP: shares only 'support' with the payment-methods memory; naive retrieval replays the wrong answer"
+    },
+    {
+      "query": "What key ingredients go into the team offsite planning?",
+      "expected_action": "none",
+      "notes": "TRAP: shares only 'key'/'team' with API-key and standup memories"
+    },
+    {
+      "query": "What's the weather forecast for Tokyo this weekend?",
+      "expected_action": "none",
+      "notes": "Fully unrelated"
+    },
+    {
+      "query": "Recommend a good espresso machine under 200 dollars",
+      "expected_action": "none",
+      "notes": "Fully unrelated"
+    },
+    {
+      "query": "What is the escalation path if a customer complains about a refund on Twitter?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'escalation' with the on-call policy and 'refund' with the billing policy, but asks about neither"
+    },
+    {
+      "query": "How do I invite a friend to use the espresso machine discount code?",
+      "expected_action": "none",
+      "notes": "TRAP: shares 'invite' with the team-invite workflow but is unrelated (and nonsensical) — should not restore"
+    },
+    {
+      "query": "What roles can I assign when adding someone to the org?",
+      "expected_action": "restore",
+      "notes": "Paraphrase of the team-invite workflow, focuses on a sub-detail (roles) not the main verb"
+    },
+    {
+      "query": "Is the on-call escalation window still 15 minutes?",
+      "expected_action": "verify",
+      "notes": "Freshness-sensitive follow-up (\"still X?\") on a policy fact — mirrors the existing refund-policy verify case, which triggers on freshness phrasing even without requires_verification set"
+    },
+    {
       "query": "What is the safe process for rotating our production API key?",
       "expected_action": "restore",
       "notes": "Legitimate paraphrase of the key-rotation workflow"
@@ -144,44 +196,9 @@
       "notes": "Legitimate paraphrase of the support-email routing fact"
     },
     {
-      "query": "Does the platform support two-factor authentication for admin accounts?",
-      "expected_action": "none",
-      "notes": "TRAP: shares only 'support' with the payment-methods memory; naive retrieval replays the wrong answer"
-    },
-    {
-      "query": "What key ingredients go into the team offsite planning?",
-      "expected_action": "none",
-      "notes": "TRAP: shares only 'key'/'team' with API-key and standup memories"
-    },
-    {
       "query": "How long does Earth take to rotate, and what produces day and night?",
       "expected_action": "none",
       "notes": "TRAP: shares 'rotate' with the production API-key workflow but asks an astronomy question"
-    },
-    {
-      "query": "How can I reduce my phone's monthly mobile data usage?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'monthly'/'usage' with the billing report workflow but asks about a personal device"
-    },
-    {
-      "query": "Which message queue algorithm gives customers the shortest wait time?",
-      "expected_action": "none",
-      "notes": "TRAP: shares 'queue'/'customer' with support-email routing but asks about queueing algorithms"
-    },
-    {
-      "query": "What is the rate of customer refunds this month?",
-      "expected_action": "none",
-      "notes": "TRAP: combines terms from rate-limit and refund-policy memories but asks for an analytics metric"
-    },
-    {
-      "query": "What's the weather forecast for Tokyo this weekend?",
-      "expected_action": "none",
-      "notes": "Fully unrelated"
-    },
-    {
-      "query": "Recommend a good espresso machine under 200 dollars",
-      "expected_action": "none",
-      "notes": "Fully unrelated"
     }
   ]
 }
