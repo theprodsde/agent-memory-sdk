@@ -11,7 +11,8 @@ from agent_memory.embeddings import Embedder, embedding_dimension, get_default_e
 from agent_memory.exceptions import BackendConnectionError
 from agent_memory.logging_config import get_logger
 from agent_memory.models import MemoryEntry, MemoryScope, MemoryState, MemoryType
-from agent_memory.store import STOP_WORDS, MemoryStore, _tokenize, bm25_scores, query_coverage
+from agent_memory.search_index import BloomFilter, DynamicStopWords
+from agent_memory.store import MemoryStore, _tokenize, bm25_scores, query_coverage
 
 log = get_logger(__name__)
 
@@ -42,11 +43,23 @@ class SqliteMemoryStore(MemoryStore):
         # Thread-local connection cache: one live connection per thread avoids
         # the ~2–3 ms overhead of sqlite3.connect() on every query.
         self._local = threading.local()
+        # Search-acceleration indexes (both maintained incrementally on write).
+        # Bloom filter:   O(k) NONE fast-path — skips FTS5 when no token can match.
+        # DynamicStopWords: extends STOP_WORDS with corpus-saturated terms at runtime.
+        self._bloom: BloomFilter = BloomFilter(capacity=100_000)
+        # min_docs=5000: don't activate dynamic stop words until the store is
+        # large enough that high-frequency terms genuinely saturate the corpus.
+        # Below 5K entries, even "common" domain terms appear in high fractions
+        # of a tiny corpus and filtering them would hurt recall.
+        self._dyn_stop: DynamicStopWords = DynamicStopWords(idf_threshold=0.05, min_docs=5_000)
+        self._indexes_warm = False   # True after first load from existing DB
         try:
             self._init_db()
         except sqlite3.Error as exc:
             raise BackendConnectionError("sqlite", str(exc)) from exc
-        log.info("SQLite store ready  path=%s", self.db_path)
+        self._warm_indexes()
+        log.info("SQLite store ready  path=%s  bloom=%d tokens  dyn_stop=%d terms",
+                 self.db_path, self._bloom.estimated_count, self._dyn_stop.dynamic_count)
         if enable_embeddings is True or enable_embeddings == "auto":
             self._init_embeddings(embedder, required=enable_embeddings is True)
 
@@ -75,6 +88,52 @@ class SqliteMemoryStore(MemoryStore):
             self._load_vec_extension(conn)
         self._local.conn = conn
         return conn
+
+    def rebuild_indexes(self) -> None:
+        """Force-rebuild the Bloom filter and DynamicStopWords from the current DB.
+
+        Use after bulk imports (e.g. ``--fast-seed``) that bypass the normal
+        ``store()`` path and therefore don't incrementally update the indexes.
+        """
+        self._indexes_warm = False
+        self._bloom = BloomFilter(capacity=max(self.count * 2, 100_000))
+        self._dyn_stop = DynamicStopWords(idf_threshold=0.05, min_docs=5_000)
+        self._warm_indexes()
+
+    def _warm_indexes(self) -> None:
+        """Populate the Bloom filter and DynamicStopWords from the existing DB.
+
+        Called once after init.  For large stores this is O(n) but runs in the
+        background on the first `__init__` call; subsequent writes are O(1).
+        """
+        if self._indexes_warm:
+            return
+        conn = self._connect()
+        rows = conn.execute("SELECT query, content, tags FROM memories").fetchall()
+        if not rows:
+            self._indexes_warm = True
+            return
+
+        from collections import Counter
+        term_freq: Counter[str] = Counter()
+        doc_count = len(rows)
+
+        for query, content, tags_json in rows:
+            import json as _json
+            try:
+                tags = _json.loads(tags_json) if tags_json else []
+            except Exception:
+                tags = []
+            text = f"{query} {content} {' '.join(tags)}"
+            tokens = {t for t in _tokenize(text) if len(t) > 1}
+            for t in tokens:
+                self._bloom.add(t)
+                term_freq[t] += 1
+
+        self._dyn_stop.rebuild_from_counter(term_freq, doc_count)
+        self._indexes_warm = True
+        log.debug("Indexes warmed  n=%d  bloom_tokens=%d  dyn_stop=%d",
+                  doc_count, self._bloom.estimated_count, self._dyn_stop.dynamic_count)
 
     def close(self) -> None:
         """Explicitly release the cached connection for this thread."""
@@ -322,6 +381,13 @@ class SqliteMemoryStore(MemoryStore):
                     (rowid, sqlite_vec.serialize_float32(vector)),
                 )
             conn.commit()
+
+        # Update search-acceleration indexes (O(tokens) per entry)
+        text = f"{entry.query} {entry.content} {' '.join(entry.tags)}"
+        tokens = {t for t in _tokenize(text) if len(t) > 1}
+        self._bloom.add_many(tokens)
+        self._dyn_stop.add_entry(entry.query, entry.content, entry.tags)
+
         return entry
 
     def get(self, memory_id: str) -> MemoryEntry | None:
@@ -486,6 +552,17 @@ class SqliteMemoryStore(MemoryStore):
                 include_expired=include_expired,
             )
 
+        # ── Bloom filter NONE fast-path ───────────────────────────────────────
+        # If none of the query's content tokens are in the Bloom filter, no FTS5
+        # query can return any matches.  Skip the SQL round-trip entirely.
+        # O(k·|tokens|) in Python memory — typically < 0.1ms.
+        if self._indexes_warm and self._bloom.estimated_count > 0:
+            raw_tokens = _tokenize(query)
+            content_tokens = self._dyn_stop.filter_tokens(raw_tokens) or raw_tokens
+            if content_tokens and not self._bloom.any_of(content_tokens):
+                log.debug("keyword_search bloom_miss  query=%r", query)
+                return []
+
         match_expr = self._fts_match_expression(query)
         if not match_expr:
             return []
@@ -602,38 +679,26 @@ class SqliteMemoryStore(MemoryStore):
         matches.sort(key=lambda pair: pair[1], reverse=True)
         return matches[:top_k]
 
-    @staticmethod
-    def _fts_expressions(query: str) -> tuple[str, str]:
-        """Return (and_expr, or_expr) FTS5 MATCH expressions.
-
-        **Tiered search strategy:**
-        1. AND expression: ``'"word1" "word2"'`` — FTS5 requires ALL tokens.
-           Match count is proportional to the rarest token, not the sum of
-           all tokens.  10–100× fewer matches at scale → much faster.
-        2. OR expression: ``'"word1" OR "word2"'`` — fallback for paraphrases
-           where AND returns fewer than top_k results.
-
-        Both expressions filter stop words first ("how", "do", "i", "my") to
-        avoid matching 80%+ of the corpus on common words.
-        """
+    def _fts_expressions(self, query: str) -> tuple[str, str]:
+        """Return (and_expr, or_expr) FTS5 MATCH expressions filtered by dynamic stop words."""
         tokens = _tokenize(query)
         if not tokens:
             return "", ""
 
-        content = [t for t in tokens if t not in STOP_WORDS and len(t) > 1]
+        # Apply dynamic corpus-frequency stop words (extends static STOP_WORDS)
+        content = self._dyn_stop.filter_tokens(tokens)
         if not content:
             content = [t for t in tokens if len(t) > 1]
         if not content:
             return "", ""
 
-        and_expr = " ".join(f'"{t}"' for t in content)   # FTS5: implicit AND
+        and_expr = " ".join(f'"{t}"' for t in content)
         or_expr  = " OR ".join(f'"{t}"' for t in content)
         return and_expr, or_expr
 
-    @staticmethod
-    def _fts_match_expression(query: str) -> str:
-        """Kept for backward compatibility — returns the OR expression."""
-        _, or_expr = SqliteMemoryStore._fts_expressions(query)
+    def _fts_match_expression(self, query: str) -> str:
+        """Returns the OR FTS5 expression with dynamic stop-word filtering."""
+        _, or_expr = self._fts_expressions(query)
         return or_expr
 
     # ------------------------------------------------------------------

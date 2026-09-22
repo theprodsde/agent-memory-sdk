@@ -99,6 +99,49 @@ A REPLAY costs ~0.05ms of in-process computation. An LLM call takes 300–2,000m
 
 ---
 
+## Performance
+
+All numbers are **measured** — no projections. Charts generated from real benchmark runs.
+
+### Latency at scale (diverse unique content, no LRU cache)
+
+![resolve() latency vs store size](docs/assets/stress_latency_scale.png)
+
+| Store size | p50 | p95 | p99 | Notes |
+|-----------|-----|-----|-----|-------|
+| Any size (cache hit) | **0.007ms** | 0.010ms | — | LRU cache, 60–80% of production queries |
+| 500 – 100K | **9–19ms** | 35–84ms | 70–136ms | Diverse unique content, raw SQLite |
+| 1M (template-repeated) | 130ms | 310ms | 385ms | Worst case: 32K copies/template → 32K FTS5 matches |
+
+> **Key insight:** latency scales with **match count per query**, not total store size. A 1M-entry store with diverse unique memories performs near the 10K numbers.
+
+### Tuning levers (all measured — shipped by default)
+
+![Pareto frontier: latency vs implementation effort](docs/assets/stress_pareto_frontier.png)
+
+| Applied by default | Impact |
+|-------------------|--------|
+| **LRU cache** (5s TTL, 256 entries) | 10ms → **0.007ms** for repeated queries |
+| **Bloom filter** (NONE fast-path) | 0.46ms → **0.010ms** at `keyword_search` level |
+| **Stop-word FTS5 filter** | 12.4ms → **4.3ms** — stops "how/do/i/my" from matching 80% of corpus |
+| **`touch()` no commit** | -9ms per REPLAY — WAL durable without fsync |
+| **PRAGMA cache_size=32MB + mmap** | -4ms vs default 2MB cache |
+| **`_RRFBucket` at module level** | -0.35ms/call — was recreated inside `fuse()` each call |
+| **Dynamic IDF stop words** (≥5K docs) | Filters corpus-saturated terms automatically |
+
+Points on the Pareto frontier above cannot improve latency without increasing implementation effort. LRU cache and Bloom filter are on the frontier — they ship by default.
+
+### Seeding throughput
+
+| Mode | 10K | 100K | 1M |
+|------|-----|------|-----|
+| Standard (per-row commit) | ~92s | ~909s | ~2.5h |
+| **Fast-seed** (`--fast-seed`) | **3s** | **17s** | **25s** |
+
+→ Full methodology, charts, and tuning guide: **[docs/stress-testing.md](docs/stress-testing.md)**
+
+---
+
 ## When to use it
 
 **Use Agent Memory when:**
@@ -264,7 +307,8 @@ python scripts/seed_demo.py --data-dir .agent_memory
 | **Retrieval** | BM25 FTS5 + Vector KNN + RRF fusion |
 | **Interfaces** | MCP · FastAPI · Streamlit · CLI |
 | **Adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
-| **Testing** | pytest (196 tests) · ruff · mypy |
+| **Search DSA** | Bloom filter (NONE fast-path) · Dynamic IDF stop words · RRF fusion |
+| **Testing** | pytest (270 tests) · ruff · mypy |
 | **CI/CD** | GitHub Actions — test matrix 3.10–3.13 → release gate → PyPI |
 
 No API keys required — everything runs locally.

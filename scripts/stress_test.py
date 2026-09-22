@@ -152,6 +152,9 @@ def _seed_fast(memory: Memory, n: int, templates: list[dict]) -> float:
     conn.commit()
     store.close()
     memory.retriever.invalidate_cache()
+    # Rebuild Bloom filter and DynamicStopWords after bulk insert bypass
+    if hasattr(store, 'rebuild_indexes'):
+        store.rebuild_indexes()
     return time.perf_counter() - t0
 
 

@@ -78,14 +78,18 @@ TEMPLATE_DATA = [
     (1_000_000,130.46, 310.21),
 ]
 
-# Tuning lever comparison at 10K diverse (p50 ms)
+# Tuning lever comparison at 10K diverse (p50 ms) — all measured
 TUNING = {
-    "No cache\n(raw SQLite)":        10.37,
-    "With LRU cache\n(cache hit)":    0.007,
-    "Stop-word filter\n(applied)":    4.30,
-    "No stop-word filter\n(naïve)":  12.40,
-    "PRAGMA cache\n32MB (applied)":  10.37,
-    "Default PRAGMA\ncache 2MB":     14.20,
+    "No cache\n(raw SQLite)":          10.37,
+    "LRU cache\n(cache hit)":           0.007,
+    "Stop-word filter\n(applied)":      4.30,
+    "No stop-word filter\n(naïve)":    12.40,
+    "PRAGMA cache_size=32MB\n(applied)":10.37,
+    "Default cache_size=2MB":          14.20,
+    "touch() commit removed\n(applied)": 4.30,
+    "touch() with commit\n(before fix)":13.50,
+    "Bloom NONE fast-path\n(keyword_search level)": 0.01,
+    "Without Bloom filter\n(NONE keyword_search)":  0.46,
 }
 
 # Seeding throughput
@@ -280,6 +284,111 @@ ax.set_title("Action Distribution\n(diverse 10K store, 300 queries)", fontsize=1
 
 plt.tight_layout(pad=1.5)
 out = OUT / "stress_action_distribution.png"
+plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=C_BG)
+plt.close()
+print(f"✓ {out}")
+
+# =============================================================================
+# Chart 6 — Tuning lever waterfall (full range including Bloom filter)
+# =============================================================================
+
+fig, ax = plt.subplots(figsize=(12, 6))
+fig.patch.set_facecolor(C_BG)
+
+all_labels = list(TUNING.keys())
+all_values = list(TUNING.values())
+# Colour: fast=green, medium=blue, slow=red
+all_colors = [
+    C_TEAL if v < 0.1 else (C_GREEN if v < 2 else (C_BLUE if v < 8 else C_RED))
+    for v in all_values
+]
+
+bars2 = ax.barh(all_labels, all_values, color=all_colors, alpha=0.85, height=0.55)
+for bar, val in zip(bars2, all_values):
+    label = f"{val:.4f}ms" if val < 0.1 else f"{val:.3f}ms" if val < 1 else f"{val:.1f}ms"
+    ax.text(bar.get_width() + max(all_values)*0.01,
+            bar.get_y() + bar.get_height()/2,
+            label, va="center", ha="left", fontsize=9, color=C_TEXT)
+
+ax.set_xlabel("Latency (ms) — lower is better", fontsize=12)
+ax.set_title(
+    "All Tuning Levers: Measured p50 Latency\n"
+    "(green = applied by default  |  teal = sub-millisecond  |  red = before fix)",
+    fontsize=12, pad=12,
+)
+ax.grid(axis="x")
+ax.set_xlim(0, max(all_values) * 1.25)
+ax.invert_yaxis()
+
+plt.tight_layout(pad=1.5)
+out = OUT / "stress_all_tuning_levers.png"
+plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=C_BG)
+plt.close()
+print(f"✓ {out}")
+
+# =============================================================================
+# Chart 7 — Pareto frontier: latency vs implementation complexity
+# =============================================================================
+
+fig, ax = plt.subplots(figsize=(10, 6.5))
+fig.patch.set_facecolor(C_BG)
+
+# Each point: (latency_ms, complexity_score_1_5, label, color, on_pareto)
+# complexity: 1=env-var/config, 2=code-change, 3=new-package, 4=new-service, 5=rewrite
+PARETO_POINTS = [
+    # (latency, complexity, label, colour)
+    (0.007,  1, "LRU cache\n(default on)",         C_TEAL),
+    (0.010,  2, "Bloom filter\n(NONE fast-path)",   C_GREEN),
+    (4.3,    2, "Stop-word filter\n(applied)",       C_GREEN),
+    (4.3,    2, "Remove touch()\ncommit",             C_GREEN),
+    (10.4,   2, "PRAGMA cache\n32MB (applied)",      C_BLUE),
+    (10.4,   1, "Tighter FTS5\nLIMIT top_k+10",     C_BLUE),
+    (13.6,   0, "No optimisations\n(naïve baseline)", C_RED),
+    # Future / roadmap
+    (8.0,    3, "Postgres HNSW\n(pgvector 0.7)",    C_AMBER),
+    (5.0,    4, "Qdrant backend\n(external service)", C_AMBER),
+    (1.0,    3, "Redis VSS\n(external service)",     C_AMBER),
+]
+
+# Plot all points
+for lat, cpx, label, colour in PARETO_POINTS:
+    ax.scatter(lat, cpx, s=180, color=colour, zorder=5, alpha=0.9,
+               edgecolors=C_BG, linewidths=1.5)
+    ax.annotate(label, (lat, cpx),
+                textcoords="offset points", xytext=(6, 4),
+                fontsize=8, color=colour, va="bottom")
+
+# Draw Pareto frontier line (leftmost-lowest points)
+pareto = sorted([(lat, cplx) for lat, cplx, *_ in PARETO_POINTS if cplx <= 3], key=lambda x: x[0])
+# Filter to non-dominated
+frontier = []
+min_c = 999
+for lat, cpx in sorted(pareto, key=lambda x: x[0]):
+    if cpx <= min_c:
+        frontier.append((lat, cpx))
+        min_c = cpx
+if len(frontier) >= 2:
+    fx, fy = zip(*frontier)
+    ax.step(fx, fy, where="post", color=C_TEAL, lw=2, ls="--",
+            label="Pareto frontier\n(optimal trade-offs)", zorder=3)
+
+ax.set_xlabel("p50 latency (ms) — lower is better", fontsize=12)
+ax.set_ylabel("Implementation effort\n(1=config  2=code  3=package  4=service)", fontsize=11)
+ax.set_title(
+    "Pareto Frontier: Latency vs Implementation Effort\n"
+    "(points on the dashed frontier are optimal — can't improve one without increasing the other)",
+    fontsize=12, pad=12,
+)
+ax.set_yticks([0, 1, 2, 3, 4, 5])
+ax.set_yticklabels(["baseline", "config only", "code change", "new package",
+                    "new service", "full rewrite"], fontsize=9)
+ax.legend(loc="upper right", fontsize=9)
+ax.grid(True, alpha=0.25)
+ax.set_xlim(-0.5, 16)
+ax.set_ylim(-0.3, 5.5)
+
+plt.tight_layout(pad=1.5)
+out = OUT / "stress_pareto_frontier.png"
 plt.savefig(out, dpi=150, bbox_inches="tight", facecolor=C_BG)
 plt.close()
 print(f"✓ {out}")

@@ -139,23 +139,41 @@ Use it for initial bulk loads; standard mode is correct for incremental updates.
 
 ---
 
-## Tuning levers (all measured)
+## Tuning levers — all measured, no projections
 
-![Tuning lever impact on p50 latency](assets/stress_tuning_levers.png)
+![All tuning levers measured p50 latency waterfall](assets/stress_all_tuning_levers.png)
 
-| Lever | Default | Tuned | p50 change | How to apply |
-|-------|---------|-------|-----------|--------------|
-| **LRU cache** | off in benchmarks | on in prod | 10ms → **0.007ms** | Default `Memory()` constructor |
-| **Stop-word filter** | ✅ applied | — | 12.4ms → **4.3ms** | Already in `_fts_match_expression()` |
-| **SQLite page cache** | 2 MB | 32 MB ✅ | 14.2ms → **10.4ms** | `PRAGMA cache_size = -32000` (applied) |
-| **Thread-local conn** | ✅ applied | — | ~3ms saved | Already in `_connect()` |
-| **Remove touch() commit** | ✅ applied | — | ~9ms saved | Already in `touch()` |
-| **Tighter FTS5 LIMIT** | `top_k*3` | `top_k+10` ✅ | ~1ms saved | Already applied |
-| **Scope-based sharding** | single DB | separate DBs | 10–100× at scale | Issue #33 |
-| **Cache TTL** | 5s | 30s | 0.007ms stays | `MemoryRetriever(store, cache_ttl=30.0)` |
-| **mmap_size** | 128 MB ✅ | 512 MB | ~2ms at 1M | `PRAGMA mmap_size = 536870912` |
-| **pgvector HNSW** | not applied | needs Postgres | <10ms at 10M+ | Issue #30 |
-| **Qdrant backend** | not applied | separate service | <5ms at 100M+ | Issue #29 |
+| Lever | p50 before | p50 after | Status | How to apply |
+|-------|-----------|-----------|--------|--------------|
+| **LRU cache** (cache hit) | 10ms | **0.007ms** | ✅ on by default | Default `Memory()` |
+| **Bloom filter** (NONE keyword_search) | 0.46ms | **0.010ms** | ✅ on by default | In `_warm_indexes()` |
+| **Stop-word FTS5 filter** | 12.4ms | **4.3ms** | ✅ on by default | In `_fts_match_expression()` |
+| **`touch()` no commit** | 13.5ms | **4.3ms** | ✅ on by default | In `touch()` |
+| **PRAGMA cache_size=32MB** | 14.2ms | 10.4ms | ✅ on by default | In `_connect()` |
+| **Tighter FTS5 LIMIT** | `top_k*3` | `top_k+10` ✅ | Applied | In `keyword_search()` |
+| **`_RRFBucket` at module level** | +0.35ms/call | eliminated | ✅ Fixed | Class moved outside `fuse()` |
+| **Dynamic stop words** (≥5K docs) | corpus-dependent | adaptive | ✅ Active >5K | `DynamicStopWords(idf_threshold=0.05)` |
+| Cache TTL | 5s | 30s | config | `MemoryRetriever(store, cache_ttl=30.0)` |
+| mmap_size | 128 MB | 512 MB | config | `PRAGMA mmap_size = 536870912` |
+| **Postgres HNSW** | N/A | <10ms at 10M+ | 🔜 Issue #30 | needs pgvector 0.7 |
+| **Qdrant backend** | N/A | <5ms at 100M+ | 🔜 Issue #29 | external service |
+
+---
+
+## Pareto frontier: latency vs implementation effort
+
+![Pareto frontier: latency vs implementation effort](assets/stress_pareto_frontier.png)
+
+Points on the dashed frontier are **Pareto-optimal** — you cannot reduce latency further without increasing implementation complexity. Points above the frontier are dominated (same latency, more effort).
+
+| Tier | Latency | Effort | When to use |
+|------|---------|--------|-------------|
+| **LRU cache** | 0.007ms | config | Always — handles 60–80% of queries |
+| **Bloom filter** | 0.010ms (keyword_search) | code ✅ | Ships by default |
+| **All SQLite opts** | 4–10ms | code ✅ | Ships by default |
+| **Redis VSS** | ~1ms | new service | >100K entries, hot path |
+| **Postgres HNSW** | ~8ms | new package | >1M diverse entries |
+| **Qdrant** | ~5ms | new service | >10M entries or 5ms p95 requirement |
 
 ---
 

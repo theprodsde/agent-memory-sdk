@@ -15,6 +15,16 @@ from agent_memory.store import MemoryStore
 log = get_logger(__name__)
 
 
+# Module-level bucket class for RRF fusion — defined here so Python doesn't
+# recreate the class on every fuse() call (each class creation costs ~350µs).
+@dataclass
+class _RRFBucket:
+    entry: MemoryEntry
+    semantic: float = 0.0
+    keyword: float = 0.0
+    rrf: float = 0.0
+
+
 # ---------------------------------------------------------------------------
 # Fusion strategy interface — Open/Closed principle
 # ---------------------------------------------------------------------------
@@ -54,23 +64,16 @@ class RRFFusionStrategy(FusionStrategy):
         vector_hits: list[tuple[MemoryEntry, float]],
         keyword_hits: list[tuple[MemoryEntry, float]],
     ) -> list[_FusedTriple]:
-        @dataclass
-        class _Bucket:
-            entry: MemoryEntry
-            semantic: float = 0.0
-            keyword: float = 0.0
-            rrf: float = 0.0
-
-        buckets: dict[str, _Bucket] = {}
+        buckets: dict[str, _RRFBucket] = {}
         k = self.k
 
         for rank, (entry, score) in enumerate(vector_hits, start=1):
-            b = buckets.setdefault(entry.id, _Bucket(entry=entry))
+            b = buckets.setdefault(entry.id, _RRFBucket(entry=entry))
             b.semantic = max(b.semantic, score)
             b.rrf += 1.0 / (k + rank)
 
         for rank, (entry, score) in enumerate(keyword_hits, start=1):
-            b = buckets.setdefault(entry.id, _Bucket(entry=entry))
+            b = buckets.setdefault(entry.id, _RRFBucket(entry=entry))
             b.keyword = max(b.keyword, score)
             b.rrf += 1.0 / (k + rank)
 
