@@ -1,5 +1,7 @@
 name: Release
 
+# Triggered when a version tag is pushed.
+# Tests must pass on every matrix target before the package is published.
 on:
   push:
     tags:
@@ -9,47 +11,116 @@ env:
   PYPI_PACKAGE_NAME: agent-memory-sdk
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Gate: run the full test matrix before touching PyPI
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true          # abort remaining matrix legs on first failure
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout (full history for hatch-vcs)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check agent_memory/ mcp_server/ tests/
+
+      - name: Type check
+        run: mypy agent_memory/ mcp_server/
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Test optional extras (Redis, API) so release never ships broken extras
+  # ──────────────────────────────────────────────────────────────────────────
+  test-extras:
+    name: Test optional extras
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install all extras under test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,api,redis]"
+          pip install fakeredis
+
+      - name: Run full suite with extras
+        run: python -m pytest tests/ -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Publish — only runs when every test job succeeds
+  # ──────────────────────────────────────────────────────────────────────────
   build-and-publish:
     name: Build and Publish to PyPI
     runs-on: ubuntu-latest
+    needs: [test, test-extras]
     permissions:
-      contents: write
-      id-token: write
+      contents: write   # create GitHub release
+      id-token: write   # PyPI trusted publishing (OIDC)
 
     steps:
-      - name: Checkout
+      - name: Checkout (full history for hatch-vcs)
         uses: actions/checkout@v4
         with:
-          # Full history so hatch-vcs can resolve the version from tags.
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5.5.0
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip build twine
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
 
-      - name: Build package
+      - name: Build sdist + wheel
         run: |
-          # For tag releases, use clean version without local identifier
           VERSION=${GITHUB_REF_NAME#v}
+          echo "Building version ${VERSION}"
           SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} python -m build
+
+      - name: Verify distributions
+        run: twine check dist/*
 
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          twine upload dist/*
+        run: twine upload dist/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

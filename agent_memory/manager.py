@@ -24,12 +24,16 @@ class Memory:
         replay_threshold: float = 0.85,
         restore_threshold: float = 0.70,
         verify_threshold: float = 0.80,
-        backend: str = "sqlite",  # "chromadb" or "sqlite"
+        backend: str = "sqlite",  # "chromadb" | "sqlite" | "redis" | "postgres"
         embedder: object | None = None,
         enable_embeddings: bool | str = "auto",
+        store: MemoryStore | None = None,
+        **backend_kwargs: object,
     ) -> None:
-        self.store: MemoryStore
-        if backend == "sqlite":
+        if store is not None:
+            # Accept a pre-built store directly (useful for testing / custom backends)
+            self.store: MemoryStore = store
+        elif backend == "sqlite":
             self.store = SqliteMemoryStore(
                 persist_dir=persist_dir,
                 collection_name=collection_name,
@@ -38,8 +42,19 @@ class Memory:
             )
         elif backend == "chromadb":
             self.store = ChromaDBStore(persist_dir=persist_dir, collection_name=collection_name)
+        elif backend == "redis":
+            from agent_memory.redis_store import RedisMemoryStore
+
+            self.store = RedisMemoryStore(**backend_kwargs)  # type: ignore[arg-type]
+        elif backend == "postgres":
+            from agent_memory.postgres_store import PostgresMemoryStore
+
+            self.store = PostgresMemoryStore(**backend_kwargs)  # type: ignore[arg-type]
         else:
-            raise ValueError(f"Unknown backend: {backend}. Use 'sqlite' or 'chromadb'")
+            raise ValueError(
+                f"Unknown backend: {backend!r}. "
+                "Choices: 'sqlite', 'chromadb', 'redis', 'postgres'"
+            )
         self._policy = policy or DefaultPolicy()
         self.retriever = MemoryRetriever(self.store, policy=self._policy)
         self.decision_engine = DecisionEngine(

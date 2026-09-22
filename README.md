@@ -7,7 +7,7 @@
 
 **Persistent semantic memory for AI agents with intelligent decision-making.**
 
-![Agent Memory demo: exact query replays, a shared-word trap query correctly returns none with a full score breakdown](docs/assets/demo.gif)
+![Agent Memory CLI demo: exact query replays, shared-word trap correctly returns none](docs/assets/demo.gif)
 
 > **🚀 Created by:** [TheProdSDE](https://github.com/TheProdSDE)
 
@@ -171,26 +171,34 @@ flowchart TD
 
 ### 🗄️ Storage Backends
 
-| Backend | Retrieval | Best for |
-|---------|-----------|----------|
-| `sqlite` (default) | Lexical: FTS5 index + BM25 + query-term coverage | Zero-setup, fast installs, exact/near-exact queries |
-| `sqlite` + `[semantic]` extra | Vector (sqlite-vec + ONNX MiniLM) + FTS5 hybrid | Paraphrase robustness with no server, no torch |
-| `chromadb` | Vector embeddings + BM25 hybrid | Existing ChromaDB deployments |
-
-```bash
-pip install "agent-memory-sdk[semantic]"   # enables vector search on the default backend
-```
+| Backend | Install extra | Retrieval | Best for |
+|---------|--------------|-----------|----------|
+| `sqlite` *(default)* | *(none)* | FTS5 BM25 + coverage | Zero-setup, fast, exact/near-exact queries |
+| `sqlite` + vectors | `[semantic]` | sqlite-vec KNN + FTS5 hybrid | Paraphrase robustness, no server |
+| `chromadb` | *(bundled)* | Vector embeddings + BM25 | Existing ChromaDB deployments |
+| `redis` | `[redis]` | BM25 (Python-side) | Sub-millisecond reads, shared-state workloads |
+| `postgres` | `[postgres]` | tsvector FTS + optional pgvector KNN | Production SQL deployments |
 
 ```python
-memory = Memory(persist_dir=".agent_memory")  # auto-detects the semantic extra
-memory.store.semantic_search_enabled          # True when vectors are active
+# SQLite (default)
+memory = Memory(persist_dir=".agent_memory")
+
+# Redis
+memory = Memory(backend="redis", url="redis://localhost:6379/0")
+
+# Postgres
+memory = Memory(backend="postgres", dsn="postgresql://user:pw@localhost/mydb")
 ```
 
-> **Honesty note:** Without the `semantic` extra, the default `sqlite`
-> backend has no embedding model — its "semantic" search is lexical. Exact
-> and near-exact queries work great; a paraphrase with zero shared words
-> ("I can't remember my login credentials" → password-reset memory) needs
-> the `semantic` extra or the `chromadb` backend.
+Start Redis or Postgres locally with the included Compose file:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d   # starts redis + postgres
+```
+
+> **Honesty note:** Without the `[semantic]` extra, sqlite's "semantic" search is lexical.
+> Exact and near-exact queries work great; paraphrases with zero shared words need
+> `[semantic]` or `chromadb`.
 
 ### 🗃️ Structured Memory
 
@@ -242,8 +250,17 @@ print(decision.explain())  # Detailed score breakdown
 ### Installation
 
 ```bash
-# From PyPI
+# Core (SQLite backend, MCP server, CLI)
 pip install agent-memory-sdk
+
+# With optional extras
+pip install "agent-memory-sdk[semantic]"    # vector search: sqlite-vec + fastembed
+pip install "agent-memory-sdk[redis]"       # Redis backend
+pip install "agent-memory-sdk[postgres]"    # PostgreSQL backend
+pip install "agent-memory-sdk[api]"         # FastAPI REST server
+pip install "agent-memory-sdk[dashboard]"   # Streamlit dashboard
+pip install "agent-memory-sdk[langchain]"   # LangChain BaseMemory adapter
+pip install "agent-memory-sdk[llamaindex]"  # LlamaIndex BaseMemory adapter
 
 # From source (development)
 git clone https://github.com/TheProdSDE/agent-memory-sdk.git
@@ -293,6 +310,56 @@ match decision.action:
     case MemoryAction.NONE:
         print("No relevant memory - answer from scratch")
 ```
+
+---
+
+## 🖥️ Dashboard
+
+An interactive Streamlit dashboard for exploring memories, testing the resolve sandbox, and monitoring stats — no coding required.
+
+![Agent Memory dashboard slideshow: stats, memory table, replay/verify/none resolve results](docs/assets/dashboard_demo.gif)
+
+### Screenshots
+
+| Stats — KPIs + charts | Memories — searchable table |
+|---|---|
+| ![Stats tab showing 31 total memories, donut chart by state, bar chart by type](docs/assets/01_stats.png) | ![Memories tab showing 29 rows with type, scope, confidence, access count](docs/assets/02_memories.png) |
+
+| Resolve → **REPLAY** | Resolve → **VERIFY** |
+|---|---|
+| ![Resolve tab showing REPLAY badge with green colour, confidence 0.88, full response shown](docs/assets/03_resolve_replay.png) | ![Resolve tab showing VERIFY badge with amber colour, context entry with fact response](docs/assets/04_resolve_verify.png) |
+
+### Install & Launch
+
+```bash
+# Install the dashboard extra
+pip install "agent-memory-sdk[dashboard]"
+
+# Launch against your existing memory store
+AGENT_MEMORY_DIR=.agent_memory agent-memory-dashboard
+# → opens http://localhost:8501
+```
+
+### Seed demo data (optional)
+
+Run this once when you want a populated store to explore — **only run it when you choose to**:
+
+```bash
+python scripts/seed_demo.py --data-dir .agent_memory
+# Seeds 31 memories across all 8 types (fact, workflow, code, preference, …)
+# and all 6 scopes (user, project, team, global, …)
+```
+
+> The data directory and collection can be changed live in the **sidebar** without restarting.
+> Click **Apply** to reconnect, **Refresh** to reload live data.
+
+### What each tab shows
+
+| Tab | Contents |
+|-----|----------|
+| **📊 Stats** | KPI tiles (total · active · archived · expired · accesses) + donut chart by state + bar chart by type |
+| **📋 Memories** | Searchable table — filter by keyword, scope, or type. Inspect any row for full detail. Add new memories inline. |
+| **🔍 Resolve** | Live decision sandbox — type any query and see the action (REPLAY / RESTORE / VERIFY / NONE), confidence score, reasons, and the exact response or context returned. |
 
 ---
 
@@ -620,38 +687,68 @@ git push origin --delete v0.1.3
 
 ---
 
-## 📈 Current Status (v0.2.0-dev)
+## 📈 Current Status (v0.3.0-dev)
 
 ### ✅ Implemented
-- Decision engine (replay / restore / verify / none) with adversarial eval cases
-- `decision.explain()` observability
-- Hybrid retrieval (BM25 + coverage scoring + RRF fusion; vectors with `[semantic]`)
-- SQLite FTS5 keyword index (no per-query index rebuilds; ~12ms at 5k memories)
-- Optional vector search on SQLite via sqlite-vec + fastembed (`[semantic]` extra)
-- SQL-aggregate `stats()` / `cleanup()` (no row caps)
-- WAL mode + busy timeout for concurrent MCP/CLI/app access
-- TTL + memory states + consolidation
-- CLI (remember, resolve, stats, benchmark, eval)
-- MCP server for Cursor, Claude Code, and other clients (mcp 1.x and 2.x)
-- Evaluation datasets incl. trap cases — 25/25 on both backends
-- CI: lint + enforced mypy + tests on 3.10–3.13 + semantic-path job
+
+**Core**
+- Decision engine (replay / restore / verify / none) with adversarial eval suite — 25/25 (100%)
+- `decision.explain()` full score breakdown and observability
+- Hybrid retrieval: BM25 FTS5 + coverage scaling + RRF fusion (~12ms at 5k memories)
+- Optional vector search via sqlite-vec + fastembed ONNX (`[semantic]` extra)
+- TTL, memory states, consolidation (near-duplicate merging)
+- SQL-aggregate `stats()` / `cleanup()` with no row caps
+- WAL mode + busy timeout for concurrent MCP / CLI / app access
+- Async API (`aremember`, `aresolve`, `alist`, …)
+
+**Backends**
+- SQLite (default) — FTS5 + optional sqlite-vec
+- ChromaDB — vector embeddings + BM25
+- **Redis** — JSON entries, sorted-set index, BM25 (`[redis]` extra)
+- **PostgreSQL** — tsvector FTS + optional pgvector KNN (`[postgres]` extra)
+- `docker-compose.dev.yml` — one-command Redis + Postgres dev environment
+
+**Interfaces**
+- CLI: `remember`, `resolve`, `stats`, `benchmark`, `eval`
+- MCP server (mcp 1.x and 2.x) — `agent-memory-mcp` / `uvx agent-memory-sdk`
+- **FastAPI REST server** — 9 endpoints + HTML status page (`[api]` extra, `agent-memory-api`)
+- **Streamlit dashboard** — stats, memory browser, resolve sandbox (`[dashboard]` extra, `agent-memory-dashboard`)
+
+**Framework adapters**
+- **LangChain** `BaseMemory` adapter — `save_context` / `load_memory_variables` (`[langchain]` extra)
+- **LlamaIndex** `BaseMemory` adapter — `put` / `get` / `get_all` with token-budget trimming (`[llamaindex]` extra)
+
+**Advanced features**
+- **Memory graph** — similarity + tag-overlap edges, BFS paths, clusters, PageRank importance scores
+- **Confidence learning** — event-driven deltas (accessed / verified / rejected) + half-life temporal decay
+- **Multi-agent support** — SHARED / NAMESPACED / ISOLATED modes, broadcast, transfer ownership
+- **LongMemEval / LoCoMo benchmark harness** — Recall@k, MRR, content-recall, action-accuracy, latency
+
+**Quality**
+- CI: lint (ruff) + enforced mypy + 196 tests on Python 3.10–3.13 + semantic-path + Redis + API jobs
+- Release pipeline gates on full test matrix before PyPI publish; pre-release tags auto-flagged
+- Branch protection: all CI checks required, 1 PR review, conversation resolution
 
 ### 🚧 Roadmap
 
-| Feature | Status | ETA |
-|---------|--------|-----|
-| Async API | ✅ Completed | v0.1.0-alpha |
-| SQLite backend (FTS5 + sqlite-vec) | ✅ Completed | v0.2.0 |
-| LongMemEval / LoCoMo benchmark harness | 📋 Planned | v0.2.x |
-| LangChain / LlamaIndex adapters | 📋 Planned | v0.2.x |
-| Redis backend | 📋 Planned | v0.3.0 |
-| Postgres backend | 📋 Planned | v0.3.0 |
-| FastAPI server + dashboard | 📋 Planned | v0.3.0 |
-| Memory graph | 📋 Planned | v0.4.0 |
-| Confidence learning | 📋 Planned | v0.4.0 |
-| Multi-agent support | 📋 Planned | v0.5.0 |
+| Feature | Status |
+|---------|--------|
+| Async API | ✅ Shipped |
+| SQLite backend (FTS5 + sqlite-vec) | ✅ Shipped |
+| LongMemEval / LoCoMo benchmark harness | ✅ Shipped |
+| LangChain / LlamaIndex adapters | ✅ Shipped |
+| Redis backend | ✅ Shipped |
+| Postgres backend | ✅ Shipped |
+| FastAPI server + REST API | ✅ Shipped |
+| Streamlit dashboard | ✅ Shipped |
+| Memory graph | ✅ Shipped |
+| Confidence learning | ✅ Shipped |
+| Multi-agent support | ✅ Shipped |
+| pgvector KNN on Postgres | 🔜 Next |
+| Redis VSS (vector search) | 🔜 Next |
+| Dashboard graph explorer tab | 🔜 Next |
 
-Have an opinion on priorities? Open a [Discussion](https://github.com/TheProdSDE/agent-memory-sdk/discussions) — roadmap input is the fastest way to contribute.
+Have an opinion on priorities? Open a [Discussion](https://github.com/TheProdSDE/agent-memory-sdk/discussions).
 
 ---
 
@@ -660,17 +757,16 @@ Have an opinion on priorities? Open a [Discussion](https://github.com/TheProdSDE
 | Component | Technology |
 |-----------|------------|
 | **Language** | Python 3.10+ |
-| **Storage** | SQLite (FTS5, optional sqlite-vec) or ChromaDB |
-| **Retrieval** | BM25 + coverage scoring + Vector Search + RRF |
-| **Interface** | MCP (Model Context Protocol) |
-| **CLI** | argparse |
-| **Testing** | pytest + pytest-asyncio |
-| **Linting** | ruff |
-| **Type Checking** | mypy |
-| **CI/CD** | GitHub Actions |
-| **Container** | Docker + docker-compose |
+| **Storage** | SQLite (FTS5, optional sqlite-vec) · ChromaDB · Redis · PostgreSQL |
+| **Retrieval** | BM25 + coverage scaling + Vector KNN + RRF fusion |
+| **Interfaces** | MCP server · FastAPI REST · Streamlit dashboard · CLI |
+| **Framework adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
+| **Dev infra** | Docker Compose (Redis + Postgres) |
+| **Testing** | pytest · pytest-asyncio · fakeredis · playwright |
+| **Linting / types** | ruff · mypy |
+| **CI/CD** | GitHub Actions (test matrix 3.10–3.13 → release gate → PyPI) |
 
-**No API keys required** - Everything runs locally!
+**No API keys required** — everything runs locally.
 
 ---
 
