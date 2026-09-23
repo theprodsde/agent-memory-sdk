@@ -4,6 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://img.shields.io/pypi/v/agent-memory-sdk.svg)](https://pypi.org/project/agent-memory-sdk/)
+[![MCP Registry](https://badge.mcpx.dev?type=server&name=io.github.theprodsde%2Fagent-memory)](https://registry.modelcontextprotocol.io/servers/io.github.theprodsde/agent-memory)
 
 **Persistent semantic memory for AI agents with intelligent decision-making.**
 
@@ -107,11 +108,18 @@ All numbers are **measured** — no projections. Charts generated from real benc
 
 ![resolve() latency vs store size](docs/assets/stress_latency_scale.png)
 
+<!-- PERF:LATENCY:START -->
 | Store size | p50 | p95 | p99 | Notes |
 |-----------|-----|-----|-----|-------|
 | Any size (cache hit) | **0.007ms** | 0.010ms | — | LRU cache, 60–80% of production queries |
-| 500 – 100K | **9–19ms** | 35–84ms | 70–136ms | Diverse unique content, raw SQLite |
-| 1M (template-repeated) | 130ms | 310ms | 385ms | Worst case: 32K copies/template → 32K FTS5 matches |
+| 500 | **4.2ms** | 5.2ms | 5.6ms | |
+| 1,000 | **5.8ms** | 17ms | 26ms | |
+| 5,000 | **6.6ms** | 7.7ms | 8.7ms | |
+| 10,000 | **8.9ms** | 10ms | 10ms | |
+| 50,000 | **5.5ms** | 8.0ms | 9.3ms | |
+| 100,000 | **7.4ms** | 12ms | 14ms | |
+| 1,000,000 (template-repeated) | 130ms | 310ms | — | Worst case: 32K copies/template |
+<!-- PERF:LATENCY:END -->
 
 > **Key insight:** latency scales with **match count per query**, not total store size. A 1M-entry store with diverse unique memories performs near the 10K numbers.
 
@@ -124,7 +132,7 @@ All numbers are **measured** — no projections. Charts generated from real benc
 | **LRU cache** (5s TTL, 256 entries) | 10ms → **0.007ms** for repeated queries |
 | **Bloom filter** (NONE fast-path) | 0.46ms → **0.010ms** at `keyword_search` level |
 | **Stop-word FTS5 filter** | 12.4ms → **4.3ms** — stops "how/do/i/my" from matching 80% of corpus |
-| **`touch()` no commit** | -9ms per REPLAY — WAL durable without fsync |
+| **`touch()` commits immediately** | Releases write lock after every REPLAY — no stall for concurrent writers |
 | **PRAGMA cache_size=32MB + mmap** | -4ms vs default 2MB cache |
 | **`_RRFBucket` at module level** | -0.35ms/call — was recreated inside `fuse()` each call |
 | **Dynamic IDF stop words** (≥5K docs) | Filters corpus-saturated terms automatically |
@@ -133,10 +141,12 @@ Points on the Pareto frontier above cannot improve latency without increasing im
 
 ### Seeding throughput
 
-| Mode | 10K | 100K | 1M |
-|------|-----|------|-----|
-| Standard (per-row commit) | ~92s | ~909s | ~2.5h |
-| **Fast-seed** (`--fast-seed`) | **3s** | **17s** | **25s** |
+<!-- PERF:SEEDING:START -->
+| Mode | 10,000 | 100,000 | 1,000,000 |
+|-----|-----|-----|-----|
+| Standard (per-row commit) | ~1min (118/s) | ~15min (110/s) | ~5.6h (50/s) |
+| **Fast-seed** (`--fast-seed`) | **~1s (8,316/s)** | **~13s (7,854/s)** | **~25s (39,913/s)** |
+<!-- PERF:SEEDING:END -->
 
 → Full methodology, charts, and tuning guide: **[docs/stress-testing.md](docs/stress-testing.md)**
 
@@ -275,6 +285,91 @@ AGENT_MEMORY_DIR=.agent_memory agent-memory-dashboard   # → http://localhost:8
 # Seed demo data (optional — run only when you want it)
 python scripts/seed_demo.py --data-dir .agent_memory
 ```
+
+---
+
+## MCP Server
+
+Agent Memory is published on the [MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.theprodsde/agent-memory) — install it in any MCP-compatible client with zero manual setup.
+
+### Add to your MCP client
+
+**Cursor** — add to `.cursor/mcp.json` in your project, or `~/.cursor/mcp.json` globally:
+
+```json
+{
+  "mcpServers": {
+    "agent-memory": {
+      "command": "uvx",
+      "args": ["agent-memory-sdk"]
+    }
+  }
+}
+```
+
+**Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "agent-memory": {
+      "command": "uvx",
+      "args": ["agent-memory-sdk"]
+    }
+  }
+}
+```
+
+**Claude Code** — add to `.claude/settings.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "agent-memory": {
+      "command": "uvx",
+      "args": ["agent-memory-sdk"]
+    }
+  }
+}
+```
+
+`uvx` installs the package on first run — no `pip install` needed.
+
+### Custom storage location
+
+```json
+{
+  "mcpServers": {
+    "agent-memory": {
+      "command": "uvx",
+      "args": ["agent-memory-sdk"],
+      "env": {
+        "AGENT_MEMORY_DIR": "/path/to/your/memory",
+        "AGENT_MEMORY_COLLECTION": "my_project"
+      }
+    }
+  }
+}
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENT_MEMORY_DIR` | `~/.agent_memory` | Directory for the persistent SQLite store |
+| `AGENT_MEMORY_COLLECTION` | `agent_memories` | Collection name (one DB per collection) |
+
+### Tools exposed
+
+| Tool | What it does |
+|------|-------------|
+| `resolve_memory` | Retrieve memory and get an explicit decision: **replay** / **restore** / **verify** / **none** — with confidence score and reasoning |
+| `remember_memory` | Store a query/response pair with optional tags, type, scope, confidence, TTL |
+| `list_memories` | Paginated list of stored memories with scope and archive filters |
+| `get_memory_by_id` | Fetch a single memory entry by ID |
+| `forget_memory` | Permanently delete a memory |
+| `archive_memory` | Archive a memory (excluded from retrieval, not deleted) |
+| `consolidate_memories` | Merge near-duplicate memories into summary entries |
+
+→ Full MCP setup guide and Docker config: **[docs/mcp.md](docs/mcp.md)**
 
 ---
 
