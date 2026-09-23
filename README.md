@@ -59,7 +59,8 @@ Adversarial eval: **25/25 (100%)** on trap queries — see [benchmarks](docs/ben
 A GPT-4o call costs ~$0.005. A support agent handling 50,000 queries/day with 70% repeat rate:
 - Without memory: 50,000 × $0.005 = **$250/day**
 - With Agent Memory: 15,000 LLM calls + cache misses = **$75/day**
-- **Saving: ~$175/day (~$64k/year)**
+- **Saving: ~ $175/day (~$64k/year)**
+- Savings can depends on how much query are repeated and similar to the previous questions.
 
 A REPLAY costs ~0.05ms of in-process computation. An LLM call takes 300–2,000ms and costs tokens.
 
