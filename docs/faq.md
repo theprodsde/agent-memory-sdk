@@ -41,16 +41,22 @@ decision = memory.resolve(query, scope=["user", "global"])
 ## Performance
 
 **How fast is `resolve()`?**
-- Cache hit (repeated query): p50 ≈ 0.05ms
-- Cache miss (new query): p95 ≈ 5.8ms at 100k memories, 7.9ms at 1M memories
+
+It depends on the corpus, query terms, cache state, embedding mode, and
+machine. A cache hit measures the in-process cache path; a cache miss measures
+retrieval against the configured store. Run the documented stress harness with
+your workload before setting a latency expectation.
 
 **How does it scale?**
-SQLite FTS5 scales sub-linearly — doubling the memory count adds only ~30% latency at large scales because the index prunes irrelevant entries before scoring. See [stress-testing.md](stress-testing.md) for detailed benchmarks.
+
+For SQLite FTS5, query-term document frequency can matter more than total row
+count. Measure the corpus and query distribution you plan to ship; see
+[stress-testing.md](stress-testing.md) for the reproducible harness.
 
 **When should I use Redis or Postgres instead of SQLite?**
 - **Redis**: multiple services sharing memory with sub-ms read latency requirements
 - **Postgres**: production deployment with existing SQL infrastructure and SQL-native aggregates
-- **SQLite**: the right default for 99% of use cases; handles millions of entries comfortably
+- **SQLite**: a zero-setup local default; validate its behavior against your workload and deployment needs
 
 ---
 

@@ -11,7 +11,7 @@ python -m pytest tests/test_scale.py -v                     # correctness at sca
 
 ## Decision quality
 
-The eval suite covers 25 cases across 4 datasets, including **adversarial
+The eval suite covers 36 cases across 4 datasets, including **adversarial
 trap cases** — queries that share a word with a stored memory but ask a
 different question, which naive retrieve-and-inject systems answer wrongly.
 
@@ -20,7 +20,7 @@ different question, which naive retrieve-and-inject systems answer wrongly.
 | `customer_support` | 4 | FAQ replay, paraphrase restore, unrelated → none |
 | `coding_agent` | 4 | Workflow replay/restore, fact verification |
 | `research_agent` | 4 | Summary replay, cross-document restore |
-| `decision_traps` | 13 | Shared-word traps, `requires_verification` facts, paraphrases |
+| `decision_traps` | 24 | Shared-word traps, `requires_verification` facts, paraphrases |
 
 Results (measured 2026-09; the suite has grown to 36 cases):
 
@@ -70,6 +70,14 @@ aggregates with no row cap.
   will compare against that, clearly labeled as user-supplied.
 - Token-savings depend entirely on your hit rate and prompt sizes; measure
   them in your own pipeline.
+
+## Competitive benchmark RFC
+
+Before publishing a cross-project comparison, follow the matched-workload,
+reproducibility, and maintainer-review rules in the
+[competitive benchmark RFC](competitive-benchmark-rfc.md). The companion
+[`benchmarks/competitive/`](../benchmarks/competitive/) directory defines the
+result contract and adapter requirements.
 
 ## Roadmap for external benchmarks
 

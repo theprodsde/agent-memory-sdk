@@ -126,11 +126,13 @@ Recency uses a half-life model: `exp(-ln2 × age_days / 30)`. A shared `datetime
 
 ## Caching
 
-The retriever maintains an in-process LRU cache (256 entries, 5s TTL). Cache hits return in < 0.1ms. The cache is invalidated on every write via `invalidate_cache()`.
+The retriever maintains an in-process LRU cache (256 entries, 5s TTL). The
+cache is invalidated on every write via `invalidate_cache()`. Its latency is
+workload- and machine-dependent.
 
 ```
-cache miss → SQLite → p95 ≈ 5.8ms  (at 100k entries)
-cache hit  → RAM    → p50 ≈ 0.05ms
+cache miss → configured store
+cache hit  → in-process LRU cache
 ```
 
 ---

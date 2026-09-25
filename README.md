@@ -140,9 +140,9 @@ Every claim below is reproducible from this repo:
 
 - **34/36 (94%)** on adversarial decision-quality eval, and the 2 misses fail safe (VERIFY, never wrong REPLAY) — `agent-memory eval` ([methodology](docs/benchmarks.md))
 - **LongMemEval retrieval proxy: 98.1% Recall@5 (_S, semantic) · 87.0% (_M, lexical)** — 500 independent haystacks; not an end-to-end or paper-baseline head-to-head, [full report](benchmarks/longmemeval/REPORT.md)
-- **Stress-tested to 1,000,000 stored memories** with published p50/p95/p99 at every scale ([charts](docs/stress-testing.md))
-- **39,913 memories/sec** bulk seeding (`--fast-seed`)
-- **282 test functions** across 20 test files — decision quality, concurrency, all 4 backends, MCP server, adapters — run in [CI](https://github.com/TheProdSDE/agent-memory-sdk/actions) on every push
+- **Reproducible stress harness** for synthetically seeded workloads up to 1,000,000 entries; archive the JSON output before publishing a performance claim ([methodology](docs/stress-testing.md))
+- **Archived stress charts:** lexical FTS5 runs at 10K, 100K, and 1M entries, with workload and result JSON documented in [stress-testing](docs/stress-testing.md)
+- **317 collected tests** across 21 test files — decision quality, concurrency, all 4 backends, MCP server, adapters — run in [CI](https://github.com/TheProdSDE/agent-memory-sdk/actions) on every push
 - Published on [PyPI](https://pypi.org/project/agent-memory-sdk/) and the official [MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.theprodsde/agent-memory)
 - Ships with a REST API, Streamlit dashboard, CLI, LangChain/LlamaIndex adapters, and async counterparts for memory read/write and decision operations
 
@@ -210,53 +210,13 @@ A REPLAY costs ~0.05ms of in-process computation. An LLM call takes 300–2,000m
 
 ## Performance
 
-All numbers are **measured** — no projections. Charts generated from real benchmark runs.
+Latency, CPU, and memory use depend on the corpus, query distribution, cache
+state, embedding mode, machine, and operating system. The bundled harness uses
+a repeatable synthetic workload; it does not establish a production SLA.
 
-### Latency at scale (diverse unique content, no LRU cache)
-
-![resolve() latency vs store size](docs/assets/stress_latency_scale.png)
-
-<!-- PERF:LATENCY:START -->
-| Store size | p50 | p95 | p99 | Notes |
-|-----------|-----|-----|-----|-------|
-| Any size (cache hit) | **0.007ms** | 0.010ms | — | LRU cache |
-| 500 | **9.4ms** | 49.9ms | 103ms | 50-template workload, no cache |
-| 1,000 | **9.0ms** | 86.4ms | 115ms | 50-template workload, no cache |
-| 5,000 | **8.9ms** | 34.7ms | 71ms | 50-template workload, no cache |
-| 10,000 | **13.6ms** | 50.6ms | 67ms | 50-template workload, no cache |
-| 50,000 | **9.5ms** | 42.7ms | 149ms | 50-template workload, no cache |
-| 100,000 | **19.4ms** | 84.3ms | 136ms | 50-template workload, no cache |
-| 1,000,000 (template-repeated) | 130ms | 310ms | — | Worst case: 32K copies/template |
-<!-- PERF:LATENCY:END -->
-
-> **Key insight:** latency scales with **match count per query**, not total store size. These measurements use repeated templates; diverse unique-memory workloads may have lower latency, but have not yet been published in this table.
-
-### Tuning levers (all measured — shipped by default)
-
-![Pareto frontier: latency vs implementation effort](docs/assets/stress_pareto_frontier.png)
-
-| Applied by default | Impact |
-|-------------------|--------|
-| **LRU cache** (5s TTL, 256 entries) | 10ms → **0.007ms** for repeated queries |
-| **Bloom filter** (NONE fast-path) | 0.46ms → **0.010ms** at `keyword_search` level |
-| **Stop-word FTS5 filter** | 12.4ms → **4.3ms** — stops "how/do/i/my" from matching 80% of corpus |
-| **`touch()` commits immediately** | Releases write lock after every REPLAY — no stall for concurrent writers |
-| **PRAGMA cache_size=32MB + mmap** | -4ms vs default 2MB cache |
-| **`_RRFBucket` at module level** | -0.35ms/call — was recreated inside `fuse()` each call |
-| **Dynamic IDF stop words** (≥5K docs) | Filters corpus-saturated terms automatically |
-
-Points on the Pareto frontier above cannot improve latency without increasing implementation effort. LRU cache and Bloom filter are on the frontier — they ship by default.
-
-### Seeding throughput
-
-<!-- PERF:SEEDING:START -->
-| Mode | 10,000 | 100,000 | 1,000,000 |
-|-----|-----|-----|-----|
-| Standard (per-row commit) | ~1min (118/s) | ~15min (110/s) | ~5.6h (50/s) |
-| **Fast-seed** (`--fast-seed`) | **~1s (8,316/s)** | **~13s (7,854/s)** | **~25s (39,913/s)** |
-<!-- PERF:SEEDING:END -->
-
-→ Full methodology, charts, and tuning guide: **[docs/stress-testing.md](docs/stress-testing.md)**
+The current lexical FTS5 results and charts are archived with their source JSON
+in [the stress-test methodology](docs/stress-testing.md). See that document for
+commands, workload scope, and guidance on interpreting results.
 
 ---
 
@@ -515,7 +475,7 @@ Agent Memory is published on the [MCP Registry](https://registry.modelcontextpro
 | **Interfaces** | MCP · FastAPI · Streamlit · CLI |
 | **Adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
 | **Search DSA** | Bloom filter (NONE fast-path) · Dynamic IDF stop words · RRF fusion |
-| **Testing** | pytest (282 tests) · ruff · mypy |
+| **Testing** | pytest (317 collected tests) · ruff · mypy |
 | **CI/CD** | GitHub Actions — test matrix 3.10–3.13 → release gate → PyPI |
 
 No API keys required — everything runs locally.

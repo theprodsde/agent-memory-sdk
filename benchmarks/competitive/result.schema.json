@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Memory Competitive Benchmark Result",
+  "type": "object",
+  "required": ["schema_version", "system", "dataset", "environment", "configuration", "metrics", "artifacts"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "system": {
+      "type": "object",
+      "required": ["name", "version", "deployment"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "adapter_commit": {"type": "string"},
+        "deployment": {"enum": ["local", "self_hosted", "hosted"]}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["name", "release", "sha256", "retrieval_unit"],
+      "properties": {
+        "name": {"type": "string"},
+        "release": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "retrieval_unit": {"enum": ["turn", "turn_pair", "session", "fact", "custom"]}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["os", "hardware", "python", "command"],
+      "properties": {
+        "os": {"type": "string"},
+        "hardware": {"type": "string"},
+        "python": {"type": "string"},
+        "container_image": {"type": "string"},
+        "command": {"type": "string"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "required": ["top_k", "cache_state"],
+      "properties": {
+        "top_k": {"type": "integer", "minimum": 1},
+        "cache_state": {"enum": ["cold", "warm", "disabled"]},
+        "embedding_model": {"type": "string"},
+        "reader_model": {"type": "string"},
+        "llm_calls_per_ingest": {"type": "number", "minimum": 0},
+        "llm_calls_per_query": {"type": "number", "minimum": 0}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "recall_at_5": {"type": "number", "minimum": 0, "maximum": 1},
+        "recall_at_10": {"type": "number", "minimum": 0, "maximum": 1},
+        "qa_accuracy": {"type": "number", "minimum": 0, "maximum": 1},
+        "wrong_replay_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "query_latency_ms": {"type": "object"},
+        "process_rss_mb": {"type": "number", "minimum": 0},
+        "ingest_seconds": {"type": "number", "minimum": 0},
+        "cost_usd": {"type": "number", "minimum": 0}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["raw_results"],
+      "properties": {
+        "raw_results": {"type": "string"},
+        "logs": {"type": "string"}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

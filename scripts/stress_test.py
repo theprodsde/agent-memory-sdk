@@ -36,6 +36,11 @@ except ImportError:
 from agent_memory.manager import Memory
 
 _DATA_DIR = Path(__file__).parent.parent / "benchmarks" / "stress"
+_JSON_OUTPUT = False
+
+
+def _progress(message: str) -> None:
+    print(message, file=sys.stderr if _JSON_OUTPUT else sys.stdout, flush=True)
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -102,7 +107,7 @@ def _seed_normal(memory: Memory, n: int, templates: list[dict]) -> float:
                 store.store(b)
             batch.clear()
             if (i + 1) % 10_000 == 0:
-                print(f"  {i+1:,}/{n:,}  ({(i+1)/(time.perf_counter()-t0):.0f}/s)", flush=True)
+                _progress(f"  {i+1:,}/{n:,}  ({(i+1)/(time.perf_counter()-t0):.0f}/s)")
 
     for b in batch:
         store.store(b)
@@ -140,10 +145,10 @@ def _seed_fast(memory: Memory, n: int, templates: list[dict]) -> float:
              0, "active", 0, now_iso, now_iso, None),
         )
         if (i + 1) % 100_000 == 0:
-            print(f"  {i+1:,}/{n:,}  ({(i+1)/(time.perf_counter()-t0):,.0f}/s)", flush=True)
+            _progress(f"  {i+1:,}/{n:,}  ({(i+1)/(time.perf_counter()-t0):,.0f}/s)")
 
     conn.commit()
-    print("  Rebuilding FTS5 …", flush=True)
+    _progress("  Rebuilding FTS5 …")
     conn.execute("DELETE FROM memories_fts")
     conn.execute(
         "INSERT INTO memories_fts(rowid,search_text) "
@@ -203,6 +208,8 @@ def _measure(memory: Memory, n_queries: int, variants: list[str], warm_up: int =
 
 def run(n_memories, *, data_dir=None, n_queries=1000, disable_cache=True,
     fast_seed=False, json_out=False, enable_embeddings: bool | str = "auto") -> dict:
+    global _JSON_OUTPUT
+    _JSON_OUTPUT = json_out
     templates = _get_templates()
     variants  = _get_queries()
 
