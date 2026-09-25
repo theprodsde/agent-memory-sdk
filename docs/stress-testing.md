@@ -62,10 +62,11 @@ any of the query's content words before applying `LIMIT`.
 
 ---
 
-## Measured results: diverse content (50 unique templates)
+## Measured results: 50-template workload
 
 Test data: 50 unique memory templates spanning auth, billing, API, team, SDK, integrations,
-preferences, and SLA. Repeated with suffixes as the store grows.  
+preferences, and SLA. Repeated with suffixes as the store grows. This workload creates
+many repeated matches; the same results are reported in the README performance table.
 Benchmark queries: 14 queries (10 in-domain, 4 out-of-domain NONE).
 
 ![resolve() Latency vs Store Size — diverse unique content](assets/stress_latency_scale.png)
@@ -84,6 +85,29 @@ Benchmark queries: 14 queries (10 in-domain, 4 out-of-domain NONE).
 > The p50 stays 9–20ms because the 50-template data creates 200–2000 copies per template
 > at larger scales.  In a real production store where each entry is truly unique,
 > p50 stays near **4–8ms** at any scale because each query matches only 5–50 documents.
+
+## Persistent-store resource profiles
+
+The LongMemEval harness creates one temporary store per question and should not
+be used to state the SDK's normal process-memory requirement. The following
+single-store profiles were measured separately on the same M-series MacBook,
+with the LRU cache disabled:
+
+| Configuration | Entries | RSS after retrieval | p50 | p95 | p99 |
+|---|---:|---:|---:|---:|---:|
+| Lexical FTS5 (`--embeddings off`) | 10,000 | 95.6MiB | 0.86ms | 1.39ms | 1.78ms |
+| Local ONNX + sqlite-vec (`--embeddings on`) | 1,000 | 344.0MiB | 4.77ms | 6.08ms | 6.59ms |
+
+Reproduce with:
+
+```bash
+python scripts/stress_test.py --memories 10000 --queries 500 --no-cache --embeddings off --json
+python scripts/stress_test.py --memories 1000 --queries 200 --no-cache --embeddings on --json
+```
+
+RSS here is the endpoint process RSS from `psutil`. It is suitable for tracking
+the SDK on this machine, not for claiming superiority over another system
+without a matched workload and environment.
 
 ---
 

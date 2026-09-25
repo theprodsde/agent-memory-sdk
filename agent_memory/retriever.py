@@ -195,20 +195,36 @@ class MemoryRetriever:
         top_k: int = 5,
         *,
         scopes: list[MemoryScope] | None = None,
+        diversify_key: str | None = None,
+        max_per_group: int = 2,
     ) -> list[RetrievalResult]:
-        cache_key = f"{query}|{top_k}|{sorted(s.value for s in scopes) if scopes else ''}"
+        """Retrieve top-k memories via hybrid search.
+
+        When *diversify_key* names a metadata field, the top-k is spread
+        across groups: at most *max_per_group* entries per distinct value of
+        that field (e.g. ``diversify_key="session_id"``), so one dominant
+        group cannot crowd out evidence living elsewhere.  Remaining slots
+        are back-filled by score if there are too few groups.
+        """
+        cache_key = (
+            f"{query}|{top_k}|{sorted(s.value for s in scopes) if scopes else ''}"
+            f"|{diversify_key}|{max_per_group if diversify_key else ''}"
+        )
         cached = self._cache.get(cache_key)
         if cached is not None:
             log.debug("retrieve cache_hit query=%r top_k=%d", query, top_k)
             return cached  # type: ignore[no-any-return]
 
+        # Diversification needs a deeper candidate pool to pick groups from.
+        fetch_k = top_k * 3 if diversify_key else top_k * 2
+
         t0 = time.perf_counter()
         try:
             # Always run keyword search — fast, reliable baseline.
-            keyword_hits = self._store.keyword_search(query, top_k=top_k * 2, scopes=scopes)
+            keyword_hits = self._store.keyword_search(query, top_k=fetch_k, scopes=scopes)
 
             if self._has_semantic_search:
-                vector_hits = self._store.search(query, top_k=top_k * 2, scopes=scopes)
+                vector_hits = self._store.search(query, top_k=fetch_k, scopes=scopes)
             else:
                 # Without embeddings, search() == keyword_search(); skip the duplicate.
                 vector_hits = keyword_hits
@@ -223,8 +239,9 @@ class MemoryRetriever:
         now = datetime.now(timezone.utc)
         fused = self._fusion.fuse(vector_hits, keyword_hits)
 
+        pool_n = top_k * 3 if diversify_key else top_k
         results: list[RetrievalResult] = []
-        for rank, (entry, semantic, keyword) in enumerate(fused[:top_k], start=1):
+        for rank, (entry, semantic, keyword) in enumerate(fused[:pool_n], start=1):
             final_score = self._policy.score(entry, semantic, keyword, now=now)  # type: ignore[call-arg]
             results.append(
                 RetrievalResult(
@@ -237,6 +254,27 @@ class MemoryRetriever:
             )
 
         results.sort(key=lambda r: r.final_score, reverse=True)
+
+        if diversify_key:
+            picked: list[RetrievalResult] = []
+            skipped: list[RetrievalResult] = []
+            group_counts: dict[object, int] = {}
+            for result in results:
+                group = (result.entry.metadata or {}).get(diversify_key)
+                if group is None or group_counts.get(group, 0) < max_per_group:
+                    picked.append(result)
+                    if group is not None:
+                        group_counts[group] = group_counts.get(group, 0) + 1
+                else:
+                    skipped.append(result)
+                if len(picked) == top_k:
+                    break
+            # Back-fill by score when there are fewer groups than slots.
+            picked.extend(skipped[: top_k - len(picked)])
+            results = picked
+        else:
+            results = results[:top_k]
+
         for index, result in enumerate(results, start=1):
             result.rank = index
 

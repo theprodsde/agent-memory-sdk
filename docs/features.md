@@ -196,3 +196,45 @@ Merge near-duplicate memories into summaries:
 created = memory.consolidate(similarity_threshold=0.95)
 # Archived the originals, returned new SUMMARY entries
 ```
+
+---
+
+## Paged Context (Hierarchical Memory)
+
+MemGPT/Letta-style context tiers that keep in-session context bounded instead of
+growing until it rots. Recent turns live in a fixed-size in-context buffer; when
+the buffer fills, the oldest turns page out to recall storage and come back only
+when a query semantically matches them. Archived entries form a third, cold tier
+searched on explicit request.
+
+```python
+paged = memory.paged(context_size=20, recall_top_k=5)
+
+# Add turns — old entries page out to recall automatically
+paged.add_turn("What is Python?", "A programming language.")
+paged.add_turn("Favourite framework?", "FastAPI.")
+
+# Bounded, query-relevant context for the next LLM call
+ctx = paged.get_context("Tell me about Python")
+prompt_block = ctx.format_for_llm()   # in-context buffer + matching recall entries
+
+paged.search_archive("Python version history")  # explicit cold-tier search
+paged.flush_to_recall()                          # page everything out at session end
+```
+
+---
+
+## Conversation Distillation
+
+Extract durable facts, preferences, and entities from a conversation turn and store
+them automatically — so knowledge survives the session instead of dying with the
+context window. Only candidates above `min_confidence` are stored.
+
+```python
+entries = memory.from_conversation(
+    human="My name is Karan and I prefer Python.",
+    assistant="Got it!",
+)
+# → stored entries for the name and the language preference,
+#   each typed, tagged, and confidence-scored by the EntityExtractor
+```

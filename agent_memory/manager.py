@@ -253,7 +253,9 @@ class Memory:
             return None
         entry.archived = True
         entry.refresh_state()
-        return self.store.update(entry)
+        archived = self.store.update(entry)
+        self.retriever.invalidate_cache()
+        return archived
 
     async def aarchive(self, memory_id: str) -> MemoryEntry | None:
         """Async version of archive()."""
@@ -265,7 +267,10 @@ class Memory:
 
         Returns counts: {"expired": N, "deleted": M}
         """
-        return self.store.cleanup_expired(delete=delete)
+        result = self.store.cleanup_expired(delete=delete)
+        if result["expired"] or result["deleted"]:
+            self.retriever.invalidate_cache()
+        return result
 
     async def acleanup(self, *, delete: bool = False) -> dict[str, int]:
         """Async version of cleanup()."""

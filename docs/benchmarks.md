@@ -22,12 +22,16 @@ different question, which naive retrieve-and-inject systems answer wrongly.
 | `research_agent` | 4 | Summary replay, cross-document restore |
 | `decision_traps` | 13 | Shared-word traps, `requires_verification` facts, paraphrases |
 
-Results (measured 2026-09, v0.2 dev):
+Results (measured 2026-09; the suite has grown to 36 cases):
 
 | Backend | Precision |
 |---|---|
-| SQLite, lexical (FTS5 + BM25 + coverage) | **25/25 (100%)** |
-| SQLite + `semantic` extra (sqlite-vec + fastembed) | **25/25 (100%)** |
+| SQLite + `semantic` extra (sqlite-vec + fastembed) | **34/36 (94.4%)** |
+
+Both misses are shared-word traps that return VERIFY instead of NONE — a
+cautious failure (VERIFY never uses the memory without validation), never a
+wrong REPLAY. External benchmark: see the
+[LongMemEval retrieval report](../benchmarks/longmemeval/REPORT.md).
 
 Scoring: an expected `restore` also accepts `replay`/`verify` (all three
 surface the memory; verify is simply more cautious). The hard boundaries —
@@ -69,6 +73,15 @@ aggregates with no row cap.
 
 ## Roadmap for external benchmarks
 
-Planned: LongMemEval / LoCoMo harness so results are comparable with other
-memory systems (mem0, Zep). Contributions welcome — see
+**Done:** LongMemEval retrieval-proxy harness — `_S` (98.1% Recall@5 semantic)
+and `_M` (87.0% lexical on independent cleaned-release haystacks). It is not an
+end-to-end evaluation or a direct comparison with the paper's original-release
+session-index baselines. Full results:
+[benchmarks/longmemeval/REPORT.md](../benchmarks/longmemeval/REPORT.md).
+
+**Planned:** the end-to-end stage (LLM answering + the benchmark's official
+GPT-4o judge, directly comparable to Zep's published accuracy), LoCoMo (the
+benchmark mem0 publishes on), and a repeated-query decision-layer benchmark
+(cost/latency/wrong-replay curves — the REPLAY/VERIFY value proposition no
+public benchmark covers). Contributions welcome — see
 [CONTRIBUTING.md](../CONTRIBUTING.md).

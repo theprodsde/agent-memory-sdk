@@ -7,7 +7,7 @@ Track live progress on the **[GitHub Project board →](https://github.com/users
 ## ✅ Shipped
 
 ### Core
-- Decision engine (REPLAY / RESTORE / VERIFY / NONE) with adversarial eval suite — 25/25 (100%)
+- Decision engine (REPLAY / RESTORE / VERIFY / NONE) with adversarial eval suite — 34/36 (94%); both misses fail safe to VERIFY
 - `decision.explain()` — full per-component score breakdown
 - Hybrid retrieval: BM25 FTS5 + coverage scaling + RRF fusion (~12ms at 5k memories)
 - Optional vector search via sqlite-vec + fastembed ONNX (`[semantic]` extra)

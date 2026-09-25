@@ -1,5 +1,28 @@
 # How agent-memory-sdk compares
 
+## The landscape (September 2026)
+
+Agent memory is a validated, crowded category. Star counts as of 2026-09-23:
+
+| Project | Stars | Category | Read-time decision layer? |
+|---|---|---|---|
+| [Mem0](https://github.com/mem0ai/mem0) | ~65.9k | Memory layer (cloud-first) | ❌ — LLM decides ADD/UPDATE/DELETE at *write* time; retrieval is search-and-inject |
+| [Graphiti / Zep](https://github.com/getzep/graphiti) | ~31.1k | Temporal knowledge graph | ❌ — temporal fact invalidation, but no replay/inject/skip decision |
+| [Cognee](https://github.com/topoteretes/cognee) | ~30.9k | Knowledge-graph memory | ❌ |
+| [Supermemory](https://github.com/supermemoryai/supermemory) | ~30.8k | Memory API | ❌ |
+| [Letta (MemGPT)](https://github.com/letta-ai/letta) | ~24.9k | Stateful agent platform | ⚠️ — agent self-manages tiers via LLM tool calls |
+| [GPTCache](https://github.com/zilliztech/GPTCache) | ~8.2k | Semantic cache | ⚠️ — replay only; no inject/verify/skip graduation |
+| [LangMem](https://github.com/langchain-ai/langmem) | ~1.7k | LangGraph memory utils | ❌ |
+
+Two observations from this table:
+
+1. **The problem is validated** — five projects above 24k stars all exist to stop agents
+   from losing or mismanaging context.
+2. **The read-side decision layer is an open gap.** Semantic caches do REPLAY only.
+   Memory layers do RESTORE only (unconditionally). Nobody graduates between them, and
+   nobody has VERIFY. Getting all four actions today means wiring GPTCache + Mem0 +
+   custom staleness logic yourself.
+
 ## Feature matrix
 
 | Dimension | Redis (raw) | mem0 | Zep | LangMem | LlamaIndex memory | ChromaDB / Pinecone | MemGPT / Letta | **agent-memory-sdk** |
@@ -7,7 +30,7 @@
 | **Core model** | Key-value; no memory schema | Entity extraction + vector store; user/session hierarchy | Conversation turns + entity graph + vector search | Message history + LLM-driven summary/extraction | Chat buffer or LLM-summarised window | Embedding vectors; chunk-level similarity | Paged context: main + archival + recall tiers | query→response experience pairs; typed + scoped |
 | **Decision intelligence** | ❌ None — caller decides everything | ❌ None — always retrieves; caller decides | ❌ None — inject is caller's job | ⚠️ Partial — LLM decides what to compress | ❌ None — returns window contents | ❌ None — nearest neighbours regardless of relevance | ⚠️ Partial — LLM function calls move data between tiers | ✅ Explicit: REPLAY / RESTORE / VERIFY / NONE with scored rationale |
 | **Explainability** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `decision.explain()` → per-component scores + reason tags |
-| **Trap-query protection** | ❌ | ❌ shared-word false positives | ❌ | ❌ | ❌ | ❌ | ⚠️ LLM judgment | ✅ 25/25 adversarial trap cases; NONE fires correctly on weak matches |
+| **Trap-query protection** | ❌ | ❌ shared-word false positives | ❌ | ❌ | ❌ | ❌ | ⚠️ LLM judgment | ✅ 34/36 adversarial trap cases; misses fail safe to VERIFY, never wrong REPLAY |
 | **Local / offline** | ✅ self-hosted | ❌ cloud-first | ⚠️ open-source but needs server + OpenAI | ⚠️ needs LLM provider | ⚠️ needs LLM provider | ✅ self-hostable | ⚠️ heavy; LLM call per op | ✅ SQLite + ONNX MiniLM, zero API keys, ~12ms/resolve |
 | **Confidence / trust model** | ❌ | ❌ | ❌ | ❌ | ❌ | Cosine only | ❌ | ✅ per-entry confidence; event-driven updates; half-life decay |
 | **Verification semantics** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `requires_verification=True` → always VERIFY, never silent replay |
@@ -90,6 +113,12 @@ Confidence is a first-class field that is updated via feedback events (`VERIFIED
 
 ### No hosted multi-tenant API
 mem0 and Zep offer managed cloud APIs with auth, multi-tenancy, and dashboards. agent-memory-sdk has a FastAPI server and Streamlit dashboard, but no built-in auth layer for a public-facing deployment.
+
+### No published head-to-head accuracy benchmark yet
+mem0 and Zep publish LOCOMO / LongMemEval *end-to-end accuracy* (LLM answering + LLM judge). We publish a LongMemEval **retrieval proxy** on independent cleaned-release haystacks ([report](../benchmarks/longmemeval/REPORT.md)); it is neither an end-to-end result nor a direct comparison with the paper's original-release session-index baselines.
+
+### Smaller community
+The projects above have 25–65k stars, funded teams, and large contributor bases. This is a focused single-purpose SDK, not a platform.
 
 ---
 
