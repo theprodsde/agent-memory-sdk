@@ -54,12 +54,15 @@ The harness reports seed time, seed rate, endpoint RSS, CPU time, action mix,
 and latency percentiles. Endpoint RSS is process-local `psutil` data; it is not
 a complete system-memory measurement or a comparison with another service.
 
-Charts generated from the archived results in
+Charts generated from the benchmark results archived in
 [`benchmarks/stress/results/`](../benchmarks/stress/results/) are available here:
 
-- [Latency by stored-memory count](assets/stress_latency_archived.png)
-- [Fast-seed throughput](assets/stress_seeding_archived.png)
-- [Measured resource and latency profile](assets/stress_resource_latency_archived.png)
+- [Latency benchmark by stored-memory count](assets/stress_latency_benchmark.png)
+- [Fast-seed throughput benchmark](assets/stress_seeding_benchmark.png)
+- [Measured resource and latency benchmark](assets/stress_resource_latency_benchmark.png)
+- [Measured decision-action mix benchmark](assets/stress_action_mix_benchmark.png)
+- [Measured cache and decision rates benchmark](assets/stress_rates_benchmark.png)
+- [Measured CPU and RSS benchmark](assets/stress_resources_benchmark.png)
 
 ## Verified Seed Samples
 

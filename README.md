@@ -141,7 +141,7 @@ Every claim below is reproducible from this repo:
 - **34/36 (94%)** on adversarial decision-quality eval, and the 2 misses fail safe (VERIFY, never wrong REPLAY) — `agent-memory eval` ([methodology](docs/benchmarks.md))
 - **LongMemEval retrieval proxy: 98.1% Recall@5 (_S, semantic) · 87.0% (_M, lexical)** — 500 independent haystacks; not an end-to-end or paper-baseline head-to-head, [full report](benchmarks/longmemeval/REPORT.md)
 - **Reproducible stress harness** for synthetically seeded workloads up to 1,000,000 entries; archive the JSON output before publishing a performance claim ([methodology](docs/stress-testing.md))
-- **Archived stress charts:** lexical FTS5 runs at 10K, 100K, and 1M entries, with workload and result JSON documented in [stress-testing](docs/stress-testing.md)
+- **Stress-test benchmark charts:** latency percentiles, seed throughput, resource use, action mix, and cache/decision rates for lexical FTS5 runs at 10K, 100K, and 1M entries, with workload and archived result JSON documented in [stress-testing](docs/stress-testing.md)
 - **317 collected tests** across 21 test files — decision quality, concurrency, all 4 backends, MCP server, adapters — run in [CI](https://github.com/TheProdSDE/agent-memory-sdk/actions) on every push
 - Published on [PyPI](https://pypi.org/project/agent-memory-sdk/) and the official [MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.theprodsde/agent-memory)
 - Ships with a REST API, Streamlit dashboard, CLI, LangChain/LlamaIndex adapters, and async counterparts for memory read/write and decision operations
@@ -214,7 +214,7 @@ Latency, CPU, and memory use depend on the corpus, query distribution, cache
 state, embedding mode, machine, and operating system. The bundled harness uses
 a repeatable synthetic workload; it does not establish a production SLA.
 
-The current lexical FTS5 results and charts are archived with their source JSON
+The current lexical FTS5 benchmark results and charts are archived with their source JSON
 in [the stress-test methodology](docs/stress-testing.md). See that document for
 commands, workload scope, and guidance on interpreting results.
 
