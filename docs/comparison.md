@@ -31,7 +31,7 @@ Two observations from this table:
 | **Decision intelligence** | ❌ None — caller decides everything | ❌ None — always retrieves; caller decides | ❌ None — inject is caller's job | ⚠️ Partial — LLM decides what to compress | ❌ None — returns window contents | ❌ None — nearest neighbours regardless of relevance | ⚠️ Partial — LLM function calls move data between tiers | ✅ Explicit: REPLAY / RESTORE / VERIFY / NONE with scored rationale |
 | **Explainability** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `decision.explain()` → per-component scores + reason tags |
 | **Trap-query protection** | ❌ | ❌ shared-word false positives | ❌ | ❌ | ❌ | ❌ | ⚠️ LLM judgment | ✅ 34/36 adversarial trap cases; misses fail safe to VERIFY, never wrong REPLAY |
-| **Local / offline** | ✅ self-hosted | ❌ cloud-first | ⚠️ open-source but needs server + OpenAI | ⚠️ needs LLM provider | ⚠️ needs LLM provider | ✅ self-hostable | ⚠️ heavy; LLM call per op | ✅ SQLite + ONNX MiniLM, zero API keys, ~12ms/resolve |
+| **Local / offline** | ✅ self-hosted | ❌ cloud-first | ⚠️ open-source but needs server + OpenAI | ⚠️ needs LLM provider | ⚠️ needs LLM provider | ✅ self-hostable | ⚠️ heavy; LLM call per op | ✅ SQLite + ONNX MiniLM, zero API keys; workload-specific latency |
 | **Confidence / trust model** | ❌ | ❌ | ❌ | ❌ | ❌ | Cosine only | ❌ | ✅ per-entry confidence; event-driven updates; half-life decay |
 | **Verification semantics** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `requires_verification=True` → always VERIFY, never silent replay |
 | **TTL / expiry** | ✅ native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ any entry; `ttl="30d"` / `ttl=3600` |
@@ -61,8 +61,8 @@ agent-memory-sdk       → NONE  confidence=0.61  reason: "below restore thresho
 ### 2. Full explainability
 `decision.explain()` returns semantic score, recency score, confidence score, usage score, and the final policy-weighted total — for every query, every time. No other tool in this list exposes this.
 
-### 3. Offline-first with sub-15ms latency
-Zero API keys. SQLite + FTS5 runs in-process; the optional ONNX embedding model loads locally. MemGPT/Letta makes an LLM API call per memory operation. mem0 and Zep default to cloud. agent-memory-sdk benchmarks at ~12ms at 5,000 memories on commodity hardware.
+### 3. Offline-first with locally measured latency
+Zero API keys. SQLite + FTS5 runs in-process; the optional ONNX embedding model loads locally. MemGPT/Letta makes an LLM API call per memory operation. mem0 and Zep default to cloud. Benchmark latency against your corpus using the documented harness.
 
 ### 4. Verification semantics
 Facts, workflows, and tool outputs can be flagged `requires_verification=True`. They always return VERIFY — never silently replayed — so stale rate limits, prices, or policies are never served verbatim without validation. No other tool has this concept.
@@ -138,4 +138,4 @@ The projects above have 25–65k stars, funded teams, and large contributor base
 
 ## One-sentence differentiator
 
-> agent-memory-sdk is the only agent memory library that treats "should I use this memory, and how much should I trust it" as a first-class, scored, explainable decision — not as something the caller figures out after retrieval — while remaining fully local and sub-15ms per query.
+> agent-memory-sdk is designed to treat "should I use this memory, and how much should I trust it" as a first-class, scored, explainable decision — not as something the caller figures out after retrieval — while remaining fully local in SQLite-only mode. Measure latency for your workload.

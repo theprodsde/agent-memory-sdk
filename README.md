@@ -94,10 +94,12 @@ custom staleness logic for verification. No existing tool decides — at read ti
 | Local after model assets are installed/cached, zero API keys | ❌ cloud-first | ⚠️ needs server + LLM | ⚠️ LLM per op | ✅ | ✅ SQLite + local ONNX |
 | Paged context tiers (MemGPT-style) | ❌ | ❌ | ✅ | ❌ | ✅ `memory.paged()` |
 
-Because Mem0, Zep, and Letta make **at least one LLM or embedding API round-trip per
-memory operation**, their floor is network latency — typically 100ms–2s. Agent Memory
-resolves **in-process**; measured latency depends on corpus shape and cache hit rate
-(see [performance](#performance) and [stress-testing details](docs/stress-testing.md)).
+Because hosted or model-backed configurations can add an LLM or embedding API
+round-trip per memory operation, their latency includes provider, model, and
+network costs. Exact latency depends on each project's configuration; this
+repository does not publish a universal 100ms–2s floor. Agent Memory resolves
+in-process in SQLite-only mode; measured latency depends on corpus shape and
+cache state (see [performance](#performance) and [stress-testing details](docs/stress-testing.md)).
 
 On *retrieval*, we publish a cleaned-release retrieval-proxy measurement below.
 On *end-to-end accuracy* (LLM answering + judge, where Mem0 and Zep publish),
@@ -152,7 +154,7 @@ Every claim below is reproducible from this repo:
 
 | Use case | Without memory | With Agent Memory | Saving |
 |----------|---------------|-------------------|--------|
-| **Support bot** handling 10k identical FAQ queries/day | Every query costs 1 LLM call | ~75% REPLAY on repeated questions, 0 LLM calls | **75% cost reduction** |
+| **Support bot** handling 10k identical FAQ queries/day | Every query costs 1 LLM call | If roughly 75% of requests match reusable memories, those matches can REPLAY without an LLM call | **Potentially lower LLM cost; measure your workload** |
 | **Coding agent** that re-derives project conventions each session | Wastes 2–5 LLM calls per session to "remember" conventions | Conventions stored once are REPLAYED/RESTORED from the first query of every later session | **No re-derivation overhead** |
 | **Research agent** building knowledge over multiple sessions | Each session starts cold; re-reads the same sources | Facts and summaries are RESTORED as context | **Persistent cross-session knowledge** |
 | **Customer onboarding** bot answering the same steps repeatedly | Always generates a response | High-confidence workflows are REPLAYED verbatim | **Consistent identical answers** |
@@ -167,7 +169,7 @@ A GPT-4o call costs ~$0.005. A support agent handling 50,000 queries/day with 70
 - **Saving: ~ $175/day (~$64k/year)**
 - Savings depend on your repeat rate and how similar incoming queries are to previously stored ones — measure in your own pipeline.
 
-A REPLAY costs ~0.05ms of in-process computation. An LLM call takes 300–2,000ms and costs tokens.
+REPLAY avoids an LLM call when policy permits it. The latency and cost difference depends on the local workload, provider, model, and network; measure both paths in your own pipeline.
 
 ### Is it right for your use case?
 

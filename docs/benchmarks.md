@@ -46,17 +46,12 @@ Example trap case that must return `none`:
 
 ## Latency
 
-Measured on an M-series MacBook (single process, local SQLite file).
-CI runners will be slower; `tests/test_scale.py` enforces a generous
-regression bound instead of these exact numbers.
-
-| Configuration | Corpus size | resolve() avg | resolve() p95 |
-|---|---|---|---|
-| SQLite lexical (FTS5) | 5,000 memories | 12 ms | 13 ms |
-| SQLite + semantic (sqlite-vec, 384-dim) | 1,000 memories | 12 ms | 19 ms |
-
-Writes: ~1 ms/memory lexical, ~8 ms/memory with embedding (single-item
-batches; bulk import via the embedder's native batching is faster).
+Latency and write cost depend on corpus shape, query terms, cache state,
+embedding mode, batch size, machine, and operating system. The reproducible
+stress harness records p50/p75/p90/p95/p99 latency, CPU, RSS, and seed rate for
+the exact workload; see [stress-testing](stress-testing.md). CI uses a
+regression bound rather than treating one machine's measurements as a portable
+performance guarantee.
 
 Before v0.2, keyword search loaded up to 10,000 rows and rebuilt a Python
 BM25 index on **every query** — roughly 1s per resolve at 5,000 memories.
