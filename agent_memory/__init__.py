@@ -28,6 +28,7 @@ from agent_memory.exceptions import (
     RetrievalError,
 )
 from agent_memory.graph import MemoryEdge, MemoryGraph
+from agent_memory.hooks import HOOK_EVENT, HookConfig, build_output, run_hook, should_skip
 from agent_memory.knowledge_graph import (
     CompositeExtractionStrategy,
     EntityExtractionStrategy,
@@ -117,6 +118,11 @@ __all__ = [
     "Memory",
     "MemoryAction",
     "MemoryDecision",
+    "HOOK_EVENT",
+    "HookConfig",
+    "build_output",
+    "run_hook",
+    "should_skip",
     "MemoryEdge",
     "MemoryEntry",
     "MemoryGraph",

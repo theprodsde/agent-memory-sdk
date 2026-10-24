@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (pre-inference hook)
+- **`UserPromptSubmit` hook** (`agent-memory hook`, `agent-memory hook-install`)
+  — a memory gate that runs *before* the host's first inference call, which MCP
+  cannot do: `resolve_memory` is a tool, so it only runs after an inference call
+  has already been spent deciding to call it. Two modes. `context` (default)
+  injects REPLAY/RESTORE/VERIFY as `additionalContext` next to the prompt; the
+  model call still happens but the agent starts the turn already knowing the
+  convention instead of re-deriving it. `gate` (opt-in) lets a near-exact REPLAY
+  answer the user with **no model call at all**.
+- **Gate keyed on relevance, not confidence.** Gating on `decision.confidence`
+  is unreachable and measures the wrong thing: for a memory that has not been
+  reused the composite score ceiling is 0.90 and measured verbatim repeats land
+  at 0.87–0.88, so a "conservative" 0.90 floor never fires — and 35% of that
+  score is recency plus stored confidence, which are identical across fresh
+  candidates and say nothing about whether a memory answers *this* query. The
+  gate instead requires that the policy already chose REPLAY **and** that hybrid
+  relevance clears `--gate-min-relevance` (default 0.90). Measured separation on
+  a seeded store: verbatim repeats 0.9375–0.9692, paraphrases 0.4748–0.8134,
+  unrelated 0.3408–0.7543 → 8/8 repeats gated, 0 false gates. `tests/test_hooks.py`
+  pins the separation so a retrieval change that collapses it fails CI.
+- **Fails open on every path.** Unparseable stdin, a corrupt or missing store, an
+  unavailable backend, or an exception inside `resolve()` all exit 0 with no
+  output and leave the prompt untouched. Exit code 2 is never used, since it
+  routes the message through stderr as an error. `hook-install` sets
+  `timeout: 10` rather than relying on the host's 30-second default.
+- **Prefilter before the store loads** — empty prompts, `/` commands, `!`
+  passthroughs, prompts under 12 or over 2000 characters, and any prompt
+  containing the bypass token (`no-memory`, configurable) return before anything
+  is constructed. Gated replies name the bypass token so the user always has a
+  route back to the model.
+- Configurable by flag or `AGENT_MEMORY_HOOK_*` environment variable
+  (precedence: flags > env > defaults). `hook-install` preserves existing hooks
+  and replaces any previous `agent-memory` entry instead of stacking duplicates;
+  `--dry-run` previews the settings JSON. Docs: [docs/hooks.md](docs/hooks.md).
+
+### Changed
+- **`chromadb` is no longer imported eagerly.** It is a core dependency
+  reachable from `agent_memory.store`, so a module-level import there put ~600 ms
+  on every `import agent_memory` — for a backend the default SQLite path never
+  touches. Moved into `ChromaDBStore.__init__`. `import agent_memory` drops from
+  634 ms to 339 ms, and the hook's prefilter-skip path from 786 ms to 303 ms;
+  every other entry point (CLI, MCP server) gets the same saving. No API change.
+
 ### Added (vector index batch — issues #18, #19, #20)
 - **Redis vector search (RedisVSS)** — the Redis backend now builds an HNSW index
   over a `FT.CREATE` VECTOR field and `search()` is real cosine KNN, pre-filtered

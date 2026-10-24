@@ -150,7 +150,7 @@ Every claim below is reproducible from this repo:
 - **LongMemEval retrieval proxy: 98.1% Recall@5 (_S, semantic) · 87.0% (_M, lexical)** — 500 independent haystacks; not an end-to-end or paper-baseline head-to-head, [full report](benchmarks/longmemeval/REPORT.md)
 - **Reproducible stress harness** for synthetically seeded workloads up to 1,000,000 entries; archive the JSON output before publishing a performance claim ([methodology](docs/stress-testing.md))
 - **Stress-test benchmark charts:** latency percentiles, seed throughput, resource use, action mix, and cache/decision rates for lexical FTS5 runs at 10K, 100K, and 1M entries, with workload and archived result JSON documented in [stress-testing](docs/stress-testing.md)
-- **526 collected tests** across 29 test modules — decision quality, concurrency, all 5 backends, MCP server, adapters — run in [CI](https://github.com/TheProdSDE/agent-memory-sdk/actions) on every push
+- **567 collected tests** across 30 test modules — decision quality, concurrency, all 5 backends, MCP server, adapters — run in [CI](https://github.com/TheProdSDE/agent-memory-sdk/actions) on every push
 - Published on [PyPI](https://pypi.org/project/agent-memory-sdk/) and the official [MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.theprodsde/agent-memory)
 - Ships with a REST API, Streamlit dashboard, CLI, LangChain/LlamaIndex adapters, and async counterparts for memory read/write and decision operations
 
@@ -453,6 +453,42 @@ Agent Memory is published on the [MCP Registry](https://registry.modelcontextpro
 
 ---
 
+## Pre-inference hook (coding agents)
+
+MCP exposes `resolve_memory` as a **tool**, which runs *after* the host already
+spent an inference call deciding to call it. So a REPLAY over MCP never removes
+a model call — it collapses the grep/read/re-derive loop that would have
+followed. A `UserPromptSubmit` hook runs *before* the host's first inference
+call, which is the only place outside the model where a stored answer can
+replace a model call instead of informing one.
+
+```bash
+agent-memory hook-install                       # inject memory alongside each prompt
+agent-memory hook-install --mode gate --lexical # let near-exact REPLAY skip the model call
+```
+
+| Mode | Model call | What you save | Failure mode |
+|---|---|---|---|
+| `context` (default) | still happens | the re-derivation loop | a stale hint the agent can override |
+| `gate` (opt-in) | **skipped** | the whole turn | the prompt never reaches the model |
+
+`gate` requires two independent keys: the policy already chose REPLAY, **and**
+hybrid relevance ≥ 0.90. It deliberately does *not* gate on
+`decision.confidence` — for a memory that has not been reused the composite
+score tops out at 0.90 and measured verbatim repeats land at 0.87–0.88, so a
+"conservative" confidence floor never fires. Measured separation on a seeded
+store: verbatim repeats 0.9375–0.9692, paraphrases 0.4748–0.8134, unrelated
+0.3408–0.7543 → **8/8 repeats gated, 0 false gates**.
+
+Costs 303ms on a prefiltered skip, 315ms with `--lexical`, 898ms with semantic
+embeddings. Fails open on every error path, so a broken store never costs you a
+prompt. The hook only reads — populate the store via the CLI, the MCP
+`remember_memory` tool, or `Memory.from_conversation()`.
+
+→ Calibration method, latency breakdown, and all flags: **[docs/hooks.md](docs/hooks.md)**
+
+---
+
 ## Integrations
 
 `agent-memory-sdk` is the core — every integration delegates to `Memory`.
@@ -484,7 +520,7 @@ Agent Memory is published on the [MCP Registry](https://registry.modelcontextpro
 | **Interfaces** | MCP · FastAPI · Streamlit · CLI |
 | **Adapters** | LangChain `BaseMemory` · LlamaIndex `BaseMemory` |
 | **Search DSA** | Bloom filter (NONE fast-path) · Dynamic IDF stop words · RRF fusion |
-| **Testing** | pytest (526 collected tests) · ruff · mypy |
+| **Testing** | pytest (567 collected tests) · ruff · mypy |
 | **CI/CD** | GitHub Actions — test matrix 3.10–3.13 → release gate → PyPI |
 
 No API keys required — everything runs locally.
@@ -498,6 +534,7 @@ No API keys required — everything runs locally.
 | [docs/usage.md](docs/usage.md) | Integration pattern, API reference, MemoryEntry / MemoryDecision fields |
 | [docs/features.md](docs/features.md) | Decision actions, hybrid retrieval, types, scopes, TTL, graph, multi-agent |
 | [docs/mcp.md](docs/mcp.md) | MCP server setup for Cursor, Claude Code, VS Code; Docker config |
+| [docs/hooks.md](docs/hooks.md) | Pre-inference `UserPromptSubmit` gate: modes, gate calibration, latency |
 | [docs/cli.md](docs/cli.md) | CLI commands, REST API server, dashboard launch, eval dataset format |
 | [docs/roadmap.md](docs/roadmap.md) | All shipped features, what's next, GitHub Project board |
 | [docs/release.md](docs/release.md) | CI-automated release process, versioning, rollback |

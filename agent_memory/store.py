@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import chromadb
-from chromadb.config import Settings
-
 from agent_memory.models import MemoryEntry, MemoryScope, MemoryState, MemoryType
 
 
@@ -271,6 +268,14 @@ class ChromaDBStore(MemoryStore):
         persist_dir: str | Path = ".agent_memory",
         collection_name: str = "agent_memories",
     ) -> None:
+        # Imported here rather than at module scope: chromadb costs ~600ms to
+        # import, and this module is reachable from `import agent_memory`, so a
+        # top-level import made every entry point — CLI, MCP server, and the
+        # UserPromptSubmit hook that runs before every prompt — pay for a
+        # backend the default SQLite path never touches.
+        import chromadb
+        from chromadb.config import Settings
+
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
 
